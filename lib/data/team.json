@@ -1,0 +1,42 @@
+[
+  {
+    "id": "9e1ee4c3-3e3a-46df-b1cc-53072aa28269",
+    "email": "river@gmail.com",
+    "fullName": "river",
+    "role": "owner",
+    "permissions": {
+      "overview": true,
+      "orders_view": true,
+      "orders_manage": true,
+      "products_view": true,
+      "products_manage": true,
+      "packs_manage": true,
+      "inventory_production": true,
+      "ui_controller": true,
+      "sales_analytics": true,
+      "settings_team": true
+    },
+    "isActive": true,
+    "createdAt": "2026-11-13T03:04:41.167277+00:00"
+  },
+  {
+    "id": "07f57f0a-d358-463a-94b3-1eea35221da2",
+    "email": "islam@gmail.com",
+    "fullName": "islam",
+    "role": "order_manager",
+    "permissions": {
+      "overview": true,
+      "orders_view": true,
+      "packs_manage": false,
+      "orders_manage": true,
+      "products_view": true,
+      "settings_team": false,
+      "ui_controller": false,
+      "products_manage": false,
+      "sales_analytics": false,
+      "inventory_production": false
+    },
+    "isActive": true,
+    "createdAt": "2026-11-13T03:05:38.923301+00:00"
+  }
+]
