@@ -10,6 +10,7 @@ import {
 } from "@/lib/validations/checkout.schema";
 import { checkRateLimit } from "@/lib/security/ratelimit";
 import { revalidatePath } from "next/cache";
+import { sendWhatsAppOrderNotification } from "@/lib/services/whatsapp.service";
 
 interface PlaceOrderResult {
   success: boolean;
@@ -159,6 +160,27 @@ export async function placeOrder(
 
       await (supabase.from("order_items") as any).insert(itemsToInsert);
     }
+
+    // Trigger WhatsApp admin alert asynchronously without blocking checkout
+    sendWhatsAppOrderNotification({
+      orderNumber: orderId,
+      customerName: payload.customer.fullName,
+      customerPhone: payload.customer.phone,
+      alternatePhone: payload.customer.alternatePhone,
+      wilayaName: wilayaFromClient?.name_fr || payload.customer.wilayaCode,
+      communeName: canonicalCommune || payload.customer.communeName,
+      deliveryAddress: payload.customer.deliveryAddress,
+      totalDZD: quote.totalDZD,
+      deliveryFeeDZD: quote.deliveryFeeDZD,
+      items: quote.verifiedItems.map((vi) => ({
+        name: vi.productName,
+        size: vi.size,
+        quantity: vi.quantity,
+        totalPrice: vi.totalPrice,
+      })),
+    }).catch((err) => {
+      console.error("[placeOrder] WhatsApp notification error:", err);
+    });
 
     try {
       revalidatePath("/[locale]/admin", "layout");

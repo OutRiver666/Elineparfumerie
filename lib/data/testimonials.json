@@ -1,12 +1,12 @@
 [
   {
-    "id": "testi-1794530218669-y16rc",
-    "author": "hamid",
-    "city": "oran",
-    "quote": "bien merci",
+    "id": "testi-1794706700825-5w85z",
+    "author": "bobo",
+    "city": "dz",
+    "quote": "nice job",
     "perfume": "Autre parfum Éline",
-    "rating": 3,
-    "createdAt": "2026-11-13T00:36:58.669Z",
+    "rating": 1,
+    "createdAt": "2026-11-15T01:38:20.826Z",
     "isVerified": true,
     "isPublished": true
   },
@@ -51,17 +51,6 @@
     "perfume": "Imperial Santal (50ml)",
     "rating": 5,
     "createdAt": "2026-11-02T16:20:00.000Z",
-    "isVerified": true,
-    "isPublished": true
-  },
-  {
-    "id": "testi-5",
-    "author": "Lydia H.",
-    "city": "Tlemcen",
-    "quote": "Livraison rapide et sécurisée à Tlemcen. Le flacon en verre lourd et le bouchon doré sont magnifiques. Le parfum est subtil, ni entêtant ni trop discret.",
-    "perfume": "Rose Impériale (30ml)",
-    "rating": 5,
-    "createdAt": "2026-10-29T12:00:00.000Z",
     "isVerified": true,
     "isPublished": true
   }
