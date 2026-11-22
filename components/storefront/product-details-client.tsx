@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Image from "next/image";
-import { Perfume, PerfumeVariant } from "@/lib/data/mock-perfumes";
+import Link from "next/link";
+import { Perfume, PerfumeVariant, LandingPageMode } from "@/types/perfume";
 import { Locale, getDictionary } from "@/lib/i18n";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SizePicker } from "./size-picker";
 import { AddToCartButton } from "./add-to-cart-button";
@@ -13,12 +13,13 @@ import { formatPrice, formatBottleSize } from "@/lib/utils";
 import {
   Truck,
   ShieldCheck,
-  Sparkles,
   Minus,
   Plus,
   Check,
   Droplets,
   Zap,
+  ArrowLeft,
+  ChevronDown,
 } from "lucide-react";
 
 interface ProductDetailsClientProps {
@@ -32,6 +33,13 @@ export function ProductDetailsClient({
 }: ProductDetailsClientProps) {
   const dict = getDictionary(locale);
   const directCheckoutRef = useRef<HTMLDivElement>(null);
+  const [showStickyCta, setShowStickyCta] = useState(true);
+
+  const landingImages = (product.landingPageImages || []).filter(Boolean);
+  const effectiveMode: LandingPageMode =
+    landingImages.length > 0 ? product.landingPageMode || "standard" : "standard";
+  const hasLandingSection =
+    effectiveMode === "landing_only" || effectiveMode === "both";
 
   const scrollToDirectCheckout = () => {
     directCheckoutRef.current?.scrollIntoView({
@@ -39,6 +47,19 @@ export function ProductDetailsClient({
       block: "start",
     });
   };
+
+  // Hide floating sticky order button once the COD form is visible in the viewport
+  useEffect(() => {
+    if (!hasLandingSection || !directCheckoutRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowStickyCta(!entry.isIntersecting);
+      },
+      { threshold: 0.12 }
+    );
+    observer.observe(directCheckoutRef.current);
+    return () => observer.disconnect();
+  }, [hasLandingSection]);
 
   // Default to 50ml or first variant
   const defaultVariant =
@@ -51,8 +72,31 @@ export function ProductDetailsClient({
   const description = product.description[locale] || product.description.fr;
   const family = product.family[locale] || product.family.fr;
 
+  // Phone-first edge-to-edge stacked landing images block (zero gap, natural aspect ratio)
+  const renderLandingImagesSection = () => (
+    <section
+      aria-label={locale === "ar" ? "عرض العطر" : "Présentation du parfum"}
+      className="w-full bg-luxury-surface/40"
+    >
+      <div className="w-full sm:max-w-2xl md:max-w-3xl sm:mx-auto sm:py-6">
+        <div className="flex flex-col gap-0 w-full overflow-hidden sm:rounded-[6px] sm:shadow-luxury bg-white">
+          {landingImages.map((imgUrl, idx) => (
+            <img
+              key={`${imgUrl}-${idx}`}
+              src={imgUrl}
+              alt={`${name} — ${idx + 1}`}
+              loading={idx === 0 ? "eager" : "lazy"}
+              decoding="async"
+              className="block w-full h-auto max-w-full m-0 p-0 select-none"
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
 
-  return (
+  // Standard 2-column product details block (Gallery + Info/Variants/Notes)
+  const renderStandardDetailsGrid = () => (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-start">
       {/* 1. PRODUCT GALLERY (LEFT) */}
       <div className="space-y-4">
@@ -62,7 +106,7 @@ export function ProductDetailsClient({
             alt={name}
             fill
             unoptimized
-            priority
+            priority={effectiveMode === "standard"}
             sizes="(max-width: 1024px) 100vw, 50vw"
             className="object-cover object-center transition-all duration-300"
           />
@@ -298,12 +342,120 @@ export function ProductDetailsClient({
           </div>
         </div>
       </div>
+    </div>
+  );
+
+  // Sticky floating order button for landing modes (auto-hides when COD form is visible)
+  const renderStickyOrderBar = () => {
+    if (!hasLandingSection || !showStickyCta || selectedVariant.stock <= 0) return null;
+    return (
+      <div className="fixed bottom-0 inset-x-0 z-40 p-3 sm:p-4 bg-white/95 backdrop-blur-md border-t border-luxury-border/40 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-serif font-semibold text-luxury-text truncate">
+              {name}
+            </p>
+            <p className="text-sm font-bold text-luxury-accent leading-tight">
+              {formatPrice(selectedVariant.priceDZD, locale)}
+              <span className="text-[10px] font-normal text-luxury-text-muted ms-1">
+                ({formatBottleSize(selectedVariant.size)})
+              </span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={scrollToDirectCheckout}
+            className="shrink-0 h-11 px-5 sm:px-6 rounded-[4px] bg-luxury-accent hover:bg-luxury-accent-hover active:scale-[0.98] text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-subtle cursor-pointer"
+          >
+            <Zap className="w-4 h-4 fill-white shrink-0" />
+            <span>{locale === "ar" ? "اطلب الآن" : "Commander"}</span>
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ── MODE 1: LANDING IMAGES ONLY (+ COD FORM AT THE END) ──────────────────
+  if (effectiveMode === "landing_only") {
+    return (
+      <div className="w-full pb-20 sm:pb-16">
+        {renderLandingImagesSection()}
+
+        {/* Direct COD Checkout right after the landing images */}
+        <div
+          ref={directCheckoutRef}
+          id="direct-checkout"
+          className="container mx-auto max-w-4xl px-3 sm:px-6 pt-6 sm:pt-10 scroll-mt-20"
+        >
+          <ProductDirectCheckout
+            product={product}
+            selectedVariant={selectedVariant}
+            quantity={quantity}
+            onQuantityChange={setQuantity}
+            onVariantChange={setSelectedVariant}
+            locale={locale}
+          />
+        </div>
+
+        {/* Subtle return to shop link at the bottom */}
+        <div className="text-center pt-8">
+          <Link
+            href={`/${locale}/shop`}
+            className="inline-flex items-center space-x-1.5 rtl:space-x-reverse text-xs text-luxury-text-muted hover:text-luxury-text transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 rtl:rotate-180" />
+            <span>{locale === "ar" ? "تصفح باقي العطور في المتجر" : "Découvrir toute la boutique"}</span>
+          </Link>
+        </div>
+
+        {renderStickyOrderBar()}
+      </div>
+    );
+  }
+
+  // ── MODE 2: BOTH (LANDING IMAGES FIRST -> NORMAL DETAILS -> COD FORM) ────
+  if (effectiveMode === "both") {
+    return (
+      <div className="w-full pb-16 sm:pb-8">
+        {/* 1. Edge-to-edge phone-optimized Landing Images first */}
+        {renderLandingImagesSection()}
+
+        {/* 2. Normal Product Details + COD Form */}
+        <div className="container mx-auto px-4 sm:px-6 pt-10 sm:pt-14 space-y-12">
+          {renderStandardDetailsGrid()}
+
+          <div
+            ref={directCheckoutRef}
+            id="direct-checkout"
+            className="scroll-mt-24 pt-2"
+          >
+            <ProductDirectCheckout
+              product={product}
+              selectedVariant={selectedVariant}
+              quantity={quantity}
+              onQuantityChange={setQuantity}
+              onVariantChange={setSelectedVariant}
+              locale={locale}
+            />
+          </div>
+        </div>
+
+        {renderStickyOrderBar()}
+      </div>
+    );
+  }
+
+  // ── MODE 3: STANDARD PRODUCT DETAILS ONLY (DEFAULT) ──────────────────────
+  return (
+    <div className="space-y-12">
+      {renderStandardDetailsGrid()}
 
       {/* 3. DIRECT COD ONE-CLICK CHECKOUT SECTION */}
       <div
         ref={directCheckoutRef}
         id="direct-checkout"
-        className="col-span-1 lg:col-span-2 scroll-mt-24 pt-4"
+        className="scroll-mt-24 pt-4"
       >
         <ProductDirectCheckout
           product={product}

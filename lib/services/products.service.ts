@@ -1,5 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { Perfume } from "@/lib/data/mock-perfumes";
+import { Perfume, LandingPageMode } from "@/types/perfume";
 
 export interface GetProductsFilters {
   gender?: "men" | "women" | "unisex";
@@ -9,47 +9,89 @@ export interface GetProductsFilters {
   offset?: number;
 }
 
+const BASE_PRODUCT_SELECT = `
+  id,
+  slug,
+  name_fr,
+  name_ar,
+  description_fr,
+  description_ar,
+  gender,
+  seasons,
+  classification,
+  top_notes_fr,
+  top_notes_ar,
+  heart_notes_fr,
+  heart_notes_ar,
+  base_notes_fr,
+  base_notes_ar,
+  images,
+  is_featured,
+  is_bestseller,
+  is_published,
+  fragrance_families (name_fr, name_ar),
+  product_variants (id, size, sku, price_dzd, compare_at_price_dzd, stock_quantity, is_active)
+`;
+
+const EXTENDED_PRODUCT_SELECT = `
+  ${BASE_PRODUCT_SELECT},
+  landing_page_mode,
+  landing_page_images
+`;
+
+function parseLandingMode(value: unknown): LandingPageMode {
+  if (value === "landing_only" || value === "both" || value === "standard") {
+    return value;
+  }
+  return "standard";
+}
+
+function parseImageArray(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export async function getProducts(filters?: GetProductsFilters): Promise<Perfume[]> {
   try {
     const supabase = await createServerSupabaseClient();
-    let query = supabase
-      .from("products")
-      .select(`
-        id,
-        slug,
-        name_fr,
-        name_ar,
-        description_fr,
-        description_ar,
-        gender,
-        seasons,
-        classification,
-        top_notes_fr,
-        top_notes_ar,
-        heart_notes_fr,
-        heart_notes_ar,
-        base_notes_fr,
-        base_notes_ar,
-        images,
-        is_featured,
-        is_bestseller,
-        is_published,
-        fragrance_families (name_fr, name_ar),
-        product_variants (id, size, sku, price_dzd, compare_at_price_dzd, stock_quantity, is_active)
-      `)
-      .eq("is_published", true);
 
-    if (filters?.gender) {
-      query = query.eq("gender", filters.gender);
-    }
-    if (filters?.season) {
-      query = query.contains("seasons", [filters.season]);
-    }
-    if (filters?.limit) {
-      query = query.limit(filters.limit);
-    }
+    const buildQuery = (selectFields: string) => {
+      let query = supabase
+        .from("products")
+        .select(selectFields)
+        .eq("is_published", true);
 
-    const { data, error } = await query;
+      if (filters?.gender) {
+        query = query.eq("gender", filters.gender);
+      }
+      if (filters?.season) {
+        query = query.contains("seasons", [filters.season]);
+      }
+      if (filters?.limit) {
+        query = query.limit(filters.limit);
+      }
+      return query;
+    };
+
+    let { data, error } = await buildQuery(EXTENDED_PRODUCT_SELECT);
+
+    // Graceful fallback if migration 00009 hasn't been executed on Supabase yet
+    if (error && (error.code === "42703" || error.message?.includes("landing_page"))) {
+      const fallback = await buildQuery(BASE_PRODUCT_SELECT);
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error || !data || data.length === 0) {
       return [];
@@ -82,6 +124,8 @@ export async function getProducts(filters?: GetProductsFilters): Promise<Perfume
         sku: v.sku,
       })),
       images: item.images || [],
+      landingPageMode: parseLandingMode(item.landing_page_mode),
+      landingPageImages: parseImageArray(item.landing_page_images),
       isFeatured: item.is_featured,
       isBestseller: item.is_bestseller,
     }));

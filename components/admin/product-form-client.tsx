@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -14,8 +14,18 @@ import {
   Sparkles,
   Check,
   AlertCircle,
+  Smartphone,
+  LayoutTemplate,
+  Layers,
+  UploadCloud,
+  ArrowUp,
+  ArrowDown,
+  Copy,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { uploadProductLandingImageAction } from "@/lib/actions/products";
+import type { LandingPageMode } from "@/types/perfume";
 
 const PRESET_PLACEHOLDERS = [
   {
@@ -139,6 +149,35 @@ export function ProductFormClient({
   const [images, setImages] = useState<string[]>(initialImages);
   const [newImageUrl, setNewImageUrl] = useState("");
   const [imageError, setImageError] = useState<string | null>(null);
+
+  // Landing Page Mode & Images state
+  const initialLandingImages: string[] = (() => {
+    if (!initialData?.landing_page_images) return [];
+    if (Array.isArray(initialData.landing_page_images)) {
+      return initialData.landing_page_images.filter(Boolean);
+    }
+    try {
+      const parsed = JSON.parse(initialData.landing_page_images);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  })();
+
+  const [landingPageMode, setLandingPageMode] = useState<LandingPageMode>(
+    initialData?.landing_page_mode === "landing_only" ||
+      initialData?.landing_page_mode === "both"
+      ? initialData.landing_page_mode
+      : "standard"
+  );
+  const [landingImages, setLandingImages] = useState<string[]>(initialLandingImages);
+  const [newLandingUrl, setNewLandingUrl] = useState("");
+  const [landingError, setLandingError] = useState<string | null>(null);
+  const [isUploadingLanding, setIsUploadingLanding] = useState(false);
+  const [showPhonePreview, setShowPhonePreview] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const landingFileInputRef = useRef<HTMLInputElement>(null);
+
   const [isFeatured, setIsFeatured] = useState(initialData?.is_featured || false);
   const [isBestseller, setIsBestseller] = useState(initialData?.is_bestseller || false);
   const [isPublished, setIsPublished] = useState(
@@ -187,6 +226,108 @@ export function ProductFormClient({
       const rest = prev.filter((_, idx) => idx !== indexToPromote);
       return [selected, ...rest];
     });
+  };
+
+  // Landing Page Images Handlers
+  const handleAddLandingUrl = () => {
+    const targetUrl = newLandingUrl.trim();
+    if (!targetUrl) {
+      setLandingError(
+        locale === "ar" ? "يرجى إدخال رابط الصورة" : "Veuillez entrer une URL d'image valide"
+      );
+      return;
+    }
+    if (
+      !targetUrl.startsWith("http://") &&
+      !targetUrl.startsWith("https://") &&
+      !targetUrl.startsWith("/")
+    ) {
+      setLandingError(
+        locale === "ar"
+          ? "يجب أن يبدأ الرابط بـ https:// أو http:// أو /"
+          : "Le lien doit commencer par https://, http:// ou /"
+      );
+      return;
+    }
+    setLandingImages((prev) => [...prev, targetUrl]);
+    setNewLandingUrl("");
+    setLandingError(null);
+  };
+
+  const handleUploadLandingFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setLandingError(null);
+    setIsUploadingLanding(true);
+
+    const uploadedUrls: string[] = [];
+    const errors: string[] = [];
+
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        errors.push(`${file.name}: format non supporté`);
+        continue;
+      }
+      if (file.size > 15 * 1024 * 1024) {
+        errors.push(`${file.name}: > 15 Mo`);
+        continue;
+      }
+
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const res = await uploadProductLandingImageAction(fd, locale);
+        if (res.success && res.url) {
+          uploadedUrls.push(res.url);
+        } else {
+          errors.push(res.error || file.name);
+        }
+      } catch (err: any) {
+        errors.push(err?.message || file.name);
+      }
+    }
+
+    if (uploadedUrls.length > 0) {
+      setLandingImages((prev) => [...prev, ...uploadedUrls]);
+    }
+    if (errors.length > 0) {
+      setLandingError(errors.join(" • "));
+    }
+
+    setIsUploadingLanding(false);
+    if (landingFileInputRef.current) {
+      landingFileInputRef.current.value = "";
+    }
+  };
+
+  const handleMoveLandingImage = (index: number, direction: "up" | "down") => {
+    setLandingImages((prev) => {
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
+  };
+
+  const handleRemoveLandingImage = (indexToRemove: number) => {
+    setLandingImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleCopyProductLink = async () => {
+    if (!slug) return;
+    const url =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/${locale}/shop/${slug}`
+        : `/${locale}/shop/${slug}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      // Clipboard fallback ignored
+    }
   };
 
   const handleNameFrChange = (value: string) => {
@@ -240,7 +381,10 @@ export function ProductFormClient({
       formData.set("heart_notes_fr", heartNotesFr);
       formData.set("heart_notes_ar", heartNotesAr);
       formData.set("base_notes_fr", baseNotesFr);
+      formData.set("base_notes_ar", baseNotesAr);
       formData.set("images", JSON.stringify(images));
+      formData.set("landing_page_mode", landingPageMode);
+      formData.set("landing_page_images", JSON.stringify(landingImages));
       formData.set("is_featured", String(isFeatured));
       formData.set("is_bestseller", String(isBestseller));
       formData.set("is_published", String(isPublished));
@@ -725,6 +869,398 @@ export function ProductFormClient({
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Landing Page (Mobile Images) Control */}
+      <section className="bg-white border border-luxury-border/30 rounded-[4px] p-6 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-luxury-border/20">
+          <div>
+            <h3 className="font-medium text-sm text-luxury-text uppercase tracking-widest flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-luxury-accent" />
+              <span>
+                {locale === "ar"
+                  ? "صفحة الهبوط بالصور (إعلانات الهاتف)"
+                  : "Page Landing Produit (Images Mobile / Pub)"}
+              </span>
+            </h3>
+            <p className="text-xs text-luxury-text-muted mt-0.5">
+              {locale === "ar"
+                ? "اختر طريقة عرض صفحة هذا العطر: التفاصيل العادية، صور صفحة هبوط فقط، أو كلاهما مع استمارة الدفع عند الاستلام في الأسفل."
+                : "Choisissez librement l'affichage de la page produit : fiche normale, images landing uniquement, ou les deux (images landing puis fiche normale + formulaire COD en bas)."}
+            </p>
+          </div>
+          {slug && (
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={handleCopyProductLink}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-[3px] border border-luxury-border/50 bg-luxury-secondary/40 hover:border-luxury-accent text-luxury-text transition-colors"
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-emerald-700">
+                      {locale === "ar" ? "تم النسخ!" : "Lien copié !"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-luxury-accent" />
+                    <span>{locale === "ar" ? "نسخ رابط الصفحة" : "Copier le lien"}</span>
+                  </>
+                )}
+              </button>
+              {mode === "edit" && (
+                <a
+                  href={`/${locale}/shop/${slug}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-[3px] border border-luxury-border/50 hover:border-luxury-accent text-luxury-text-muted hover:text-luxury-text transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>{locale === "ar" ? "فتح" : "Voir"}</span>
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 3 Display Mode Cards */}
+        <div className="space-y-2">
+          <label className={labelCls}>
+            {locale === "ar" ? "وضع عرض صفحة العطر" : "Mode d'affichage de la page"}
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              {
+                value: "standard" as LandingPageMode,
+                icon: LayoutTemplate,
+                titleFr: "Fiche Normale",
+                titleAr: "التفاصيل العادية فقط",
+                descFr: "Galerie classique, notes olfactives et formulaire COD.",
+                descAr: "صفحة المتجر العادية مع الصور والوصف واستمارة الطلب.",
+              },
+              {
+                value: "landing_only" as LandingPageMode,
+                icon: Smartphone,
+                titleFr: "Landing Images Uniquement",
+                titleAr: "صور الهبوط فقط",
+                descFr: "Images empilées plein écran mobile + formulaire COD à la fin.",
+                descAr: "صور متتالية مثالية للهاتف تليها مباشرة استمارة الطلب.",
+              },
+              {
+                value: "both" as LandingPageMode,
+                icon: Layers,
+                titleFr: "Landing + Fiche Normale",
+                titleAr: "صور الهبوط + التفاصيل العادية",
+                descFr: "Images landing en premier, puis détails produit et formulaire COD.",
+                descAr: "صور الهبوط أولاً، ثم تفاصيل العطر العادية، ثم استمارة الطلب.",
+              },
+            ].map((opt) => {
+              const Icon = opt.icon;
+              const isSelected = landingPageMode === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    setLandingPageMode(opt.value);
+                    setLandingError(null);
+                  }}
+                  className={`text-left rtl:text-right p-3.5 rounded-[4px] border transition-all cursor-pointer ${
+                    isSelected
+                      ? "border-luxury-accent bg-luxury-secondary/50 ring-2 ring-luxury-accent/20"
+                      : "border-luxury-border/40 bg-white hover:border-luxury-accent/50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <Icon
+                        className={`w-4 h-4 ${
+                          isSelected ? "text-luxury-accent" : "text-luxury-text-muted"
+                        }`}
+                      />
+                      <span className="text-xs font-semibold text-luxury-text">
+                        {locale === "ar" ? opt.titleAr : opt.titleFr}
+                      </span>
+                    </div>
+                    {isSelected && (
+                      <span className="w-4 h-4 rounded-full bg-luxury-accent text-white flex items-center justify-center">
+                        <Check className="w-2.5 h-2.5" />
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-luxury-text-muted leading-snug">
+                    {locale === "ar" ? opt.descAr : opt.descFr}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Landing Images Upload & Stack Manager */}
+        <div className="space-y-4 pt-2 border-t border-luxury-border/20">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-luxury-text">
+                {locale === "ar"
+                  ? "صور صفحة الهبوط (صورة طويلة أو صور متتالية الواحدة تحت الأخرى)"
+                  : "Images de la Page Landing (1 image longue ou plusieurs images empilées)"}
+              </p>
+              <p className="text-[11px] text-luxury-text-muted mt-0.5">
+                {locale === "ar"
+                  ? "يتم عرض الصور بالترتيب من الأعلى إلى الأسفل بدون فراغات، بعرض كامل لشاشة الهاتف."
+                  : "Les images s'affichent de haut en bas sans aucun espace, plein écran sur téléphone. Vous pouvez garder vos images enregistrées même en mode Fiche Normale."}
+              </p>
+            </div>
+            <span className="text-xs text-luxury-accent font-semibold px-2.5 py-1 bg-luxury-secondary rounded-[3px] self-start sm:self-auto shrink-0">
+              {landingImages.length} {locale === "ar" ? "صور هبوط" : "image(s) landing"}
+            </span>
+          </div>
+
+          {/* Upload from Device + Paste URL */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Device Multi-File Upload */}
+            <div className="p-3.5 rounded-[4px] border border-dashed border-luxury-accent/50 bg-luxury-secondary/20 flex flex-col justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-luxury-text">
+                <UploadCloud className="w-4 h-4 text-luxury-accent shrink-0" />
+                <span>
+                  {locale === "ar"
+                    ? "رفع صورة أو عدة صور من الجهاز"
+                    : "Téléverser 1 ou plusieurs images depuis l'appareil"}
+                </span>
+              </div>
+              <input
+                ref={landingFileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleUploadLandingFiles}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                disabled={isUploadingLanding}
+                onClick={() => landingFileInputRef.current?.click()}
+                className="w-full gap-2"
+              >
+                {isUploadingLanding ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{locale === "ar" ? "جاري الرفع..." : "Téléchargement..."}</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4" />
+                    <span>
+                      {locale === "ar" ? "اختيار الصور (JPG, PNG, WEBP)" : "Choisir des images (JPG, PNG, WEBP)"}
+                    </span>
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* Paste URL */}
+            <div className="p-3.5 rounded-[4px] border border-luxury-border/40 bg-luxury-secondary/10 flex flex-col justify-between gap-2">
+              <label className="text-xs font-medium text-luxury-text">
+                {locale === "ar" ? "أو إضافة صورة عبر الرابط (URL)" : "Ou ajouter par lien URL"}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  className={`${inputCls} flex-1`}
+                  value={newLandingUrl}
+                  onChange={(e) => {
+                    setNewLandingUrl(e.target.value);
+                    if (landingError) setLandingError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddLandingUrl();
+                    }
+                  }}
+                  placeholder="https://.../landing-section-1.jpg"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAddLandingUrl}
+                  className="shrink-0 gap-1"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{locale === "ar" ? "إضافة" : "Ajouter"}</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {landingError && (
+            <p className="text-xs text-red-600 flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{landingError}</span>
+            </p>
+          )}
+
+          {/* Warning if mode needs images */}
+          {landingPageMode !== "standard" && landingImages.length === 0 && (
+            <div className="p-3 rounded-[4px] bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                {locale === "ar"
+                  ? "أضف صورة واحدة على الأقل لتفعيل صفحة الهبوط عند الحفظ."
+                  : "Ajoutez au moins une image landing pour enregistrer ce mode d'affichage."}
+              </span>
+            </div>
+          )}
+
+          {/* Ordered Stack List + Optional Mobile Preview */}
+          {landingImages.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs uppercase tracking-wider text-luxury-text-muted font-semibold">
+                  {locale === "ar"
+                    ? "ترتيب صور صفحة الهبوط (من الأعلى إلى الأسفل)"
+                    : "Ordre d'affichage vertical (haut → bas)"}
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowPhonePreview((prev) => !prev)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-luxury-accent hover:underline"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>
+                      {showPhonePreview
+                        ? locale === "ar"
+                          ? "إخفاء معاينة الهاتف"
+                          : "Masquer l'aperçu mobile"
+                        : locale === "ar"
+                        ? "معاينة شاشة الهاتف"
+                        : "Aperçu écran téléphone"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLandingImages([])}
+                    className="text-[11px] text-red-600 hover:underline"
+                  >
+                    {locale === "ar" ? "حذف الكل" : "Tout supprimer"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {landingImages.map((imgUrl, idx) => (
+                  <div
+                    key={`${imgUrl}-${idx}`}
+                    className="flex items-center gap-3 p-2.5 rounded-[4px] border border-luxury-border/40 bg-luxury-secondary/20"
+                  >
+                    <span className="w-7 h-7 rounded-[3px] bg-luxury-accent text-white text-xs font-bold flex items-center justify-center shrink-0">
+                      {idx + 1}
+                    </span>
+
+                    <div className="w-12 h-16 rounded-[3px] overflow-hidden bg-gray-100 border border-luxury-border/30 shrink-0">
+                      <img
+                        src={imgUrl}
+                        alt={`Landing #${idx + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-luxury-text">
+                        {locale === "ar" ? `القسم #${idx + 1}` : `Section #${idx + 1}`}
+                      </p>
+                      <p className="text-[11px] text-luxury-text-muted font-mono truncate" title={imgUrl}>
+                        {imgUrl}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleMoveLandingImage(idx, "up")}
+                        disabled={idx === 0}
+                        title={locale === "ar" ? "نقل للأعلى" : "Monter"}
+                        className="p-1.5 rounded-[3px] border border-luxury-border/40 bg-white hover:border-luxury-accent text-luxury-text disabled:opacity-30 transition-colors"
+                      >
+                        <ArrowUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMoveLandingImage(idx, "down")}
+                        disabled={idx === landingImages.length - 1}
+                        title={locale === "ar" ? "نقل للأسفل" : "Descendre"}
+                        className="p-1.5 rounded-[3px] border border-luxury-border/40 bg-white hover:border-luxury-accent text-luxury-text disabled:opacity-30 transition-colors"
+                      >
+                        <ArrowDown className="w-3.5 h-3.5" />
+                      </button>
+                      <a
+                        href={imgUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={locale === "ar" ? "فتح الصورة" : "Ouvrir l'image"}
+                        className="p-1.5 rounded-[3px] border border-luxury-border/40 bg-white hover:border-luxury-accent text-luxury-text-muted hover:text-luxury-text transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLandingImage(idx)}
+                        title={locale === "ar" ? "حذف" : "Supprimer"}
+                        className="p-1.5 rounded-[3px] border border-red-200 bg-white hover:bg-red-50 text-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Mobile Screen Live Stack Preview */}
+              {showPhonePreview && (
+                <div className="pt-3 flex justify-center">
+                  <div className="w-[320px] rounded-[24px] border-[6px] border-zinc-900 bg-white shadow-xl overflow-hidden">
+                    <div className="bg-zinc-900 text-white text-[10px] py-1.5 px-3 flex items-center justify-between">
+                      <span>9:41</span>
+                      <span className="font-mono text-zinc-400 truncate max-w-[180px]">
+                        /shop/{slug || "parfum"}
+                      </span>
+                      <span>5G</span>
+                    </div>
+                    <div className="max-h-[520px] overflow-y-auto flex flex-col gap-0">
+                      {landingImages.map((imgUrl, idx) => (
+                        <img
+                          key={`preview-${idx}`}
+                          src={imgUrl}
+                          alt={`Aperçu mobile ${idx + 1}`}
+                          className="block w-full h-auto m-0 p-0"
+                        />
+                      ))}
+                      {landingPageMode === "both" && (
+                        <div className="p-3 bg-luxury-secondary/40 text-center text-[11px] font-medium text-luxury-text border-t border-luxury-border/30">
+                          {locale === "ar"
+                            ? "↓ تفاصيل العطر العادية ↓"
+                            : "↓ Fiche Produit Normale ↓"}
+                        </div>
+                      )}
+                      <div className="p-4 bg-luxury-accent/10 text-center text-xs font-semibold text-luxury-accent border-t border-luxury-accent/20">
+                        {locale === "ar"
+                          ? "استمارة الطلب المباشر (الدفع عند الاستلام)"
+                          : "Formulaire de Commande Rapide (COD)"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

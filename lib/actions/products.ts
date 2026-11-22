@@ -1,9 +1,12 @@
 "use server";
 
+import fs from "fs";
+import path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireAdminPermission } from "@/lib/security/auth-guard";
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
 
@@ -36,6 +39,8 @@ const productFormSchema = z.object({
   base_notes_fr: z.string().optional(),
   base_notes_ar: z.string().optional(),
   images: z.string().optional(), // JSON array of URLs
+  landing_page_mode: z.enum(["standard", "landing_only", "both"]).default("standard"),
+  landing_page_images: z.string().optional(), // JSON array of URLs
   is_featured: z.boolean().default(false),
   is_bestseller: z.boolean().default(false),
   is_published: z.boolean().default(true),
@@ -47,8 +52,6 @@ export type ProductFormState = {
   error?: string;
   fieldErrors?: Record<string, string[]>;
 };
-
-import { requireAdminPermission } from "@/lib/security/auth-guard";
 
 // Helper: ensure request is from authenticated staff with products_manage permission
 async function requireStaff(locale: string) {
@@ -62,6 +65,109 @@ function parseNotes(value?: string): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function parseUrlArray(value?: string): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((u): u is string => typeof u === "string")
+        .map((u) => u.trim())
+        .filter(Boolean);
+    }
+    return typeof parsed === "string" && parsed.trim() ? [parsed.trim()] : [];
+  } catch {
+    return value.trim() ? [value.trim()] : [];
+  }
+}
+
+// ─── UPLOAD PRODUCT LANDING PAGE IMAGE ───────────────────────────────────────
+
+export async function uploadProductLandingImageAction(
+  formData: FormData,
+  locale: string = "fr"
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  try {
+    await requireStaff(locale);
+
+    const file = formData.get("file") as File | null;
+    if (!file || typeof file === "string") {
+      return {
+        success: false,
+        error: locale === "ar" ? "لم يتم اختيار أي ملف." : "Aucun fichier sélectionné.",
+      };
+    }
+
+    if (!file.type.startsWith("image/")) {
+      return {
+        success: false,
+        error:
+          locale === "ar"
+            ? "صيغة الملف غير مدعومة. يرجى اختيار صورة (JPG, PNG, WEBP)."
+            : "Format invalide. Veuillez sélectionner une image (JPG, PNG, WEBP).",
+      };
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+      return {
+        success: false,
+        error:
+          locale === "ar"
+            ? "حجم الصورة يجب ألا يتجاوز 15 ميجابايت."
+            : "L'image ne doit pas dépasser 15 Mo.",
+      };
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const cleanExt = ["jpg", "jpeg", "png", "webp", "gif", "avif"].includes(ext) ? ext : "jpg";
+    const filename = `landing_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${cleanExt}`;
+    const storagePath = `landing-pages/${filename}`;
+
+    // 1. Upload to Supabase Storage "storefront" bucket
+    try {
+      const admin = createAdminClient();
+      const { error: uploadError } = await admin.storage
+        .from("storefront")
+        .upload(storagePath, buffer, {
+          contentType: file.type,
+          upsert: true,
+        });
+
+      if (!uploadError) {
+        const { data: pubUrl } = admin.storage.from("storefront").getPublicUrl(storagePath);
+        if (pubUrl?.publicUrl) {
+          return { success: true, url: pubUrl.publicUrl };
+        }
+      }
+    } catch (storageErr) {
+      console.warn("[uploadProductLandingImageAction] Supabase storage fallback to local:", storageErr);
+    }
+
+    // 2. Fallback: Save to public/uploads/landing-pages/
+    const uploadsDir = path.join(process.cwd(), "public", "uploads", "landing-pages");
+    if (!fs.existsSync(uploadsDir)) {
+      await fs.promises.mkdir(uploadsDir, { recursive: true });
+    }
+    const filePath = path.join(uploadsDir, filename);
+    await fs.promises.writeFile(filePath, buffer);
+
+    return { success: true, url: `/uploads/landing-pages/${filename}` };
+  } catch (error: any) {
+    console.error("[uploadProductLandingImageAction] Error:", error);
+    return {
+      success: false,
+      error:
+        error?.message ||
+        (locale === "ar"
+          ? "حدث خطأ أثناء رفع الصورة."
+          : "Erreur lors du téléchargement de l'image."),
+    };
+  }
 }
 
 // ─── CREATE PRODUCT ──────────────────────────────────────────────────────────
@@ -89,6 +195,7 @@ export async function createProduct(
     ...raw,
     seasons,
     variants,
+    landing_page_mode: raw.landing_page_mode || "standard",
     is_featured: raw.is_featured === "true" || raw.is_featured === "on",
     is_bestseller: raw.is_bestseller === "true" || raw.is_bestseller === "on",
     is_published: raw.is_published === "true" || raw.is_published === "on",
@@ -103,44 +210,77 @@ export async function createProduct(
   }
 
   const data = parsed.data;
-  const admin = createAdminClient();
+  const images = parseUrlArray(data.images);
+  const landingPageImages = parseUrlArray(data.landing_page_images);
 
-  // Parse image URLs
-  let images: string[] = [];
-  try {
-    images = data.images ? JSON.parse(data.images) : [];
-  } catch {
-    images = data.images ? [data.images] : [];
+  if (data.landing_page_mode !== "standard" && landingPageImages.length === 0) {
+    return {
+      error:
+        locale === "ar"
+          ? "يرجى إضافة صورة واحدة على الأقل لصفحة الهبوط أو اختيار وضع صفحة التفاصيل العادية."
+          : "Veuillez ajouter au moins une image pour la page landing, ou sélectionner le mode Fiche Produit Normale.",
+    };
   }
 
+  const admin = createAdminClient();
+
+  const basePayload = {
+    slug: data.slug,
+    name_fr: data.name_fr,
+    name_ar: data.name_ar,
+    description_fr: data.description_fr,
+    description_ar: data.description_ar,
+    gender: data.gender,
+    classification: data.classification,
+    fragrance_family_id: data.fragrance_family_id || null,
+    seasons: data.seasons,
+    top_notes_fr: parseNotes(data.top_notes_fr),
+    top_notes_ar: parseNotes(data.top_notes_ar),
+    heart_notes_fr: parseNotes(data.heart_notes_fr),
+    heart_notes_ar: parseNotes(data.heart_notes_ar),
+    base_notes_fr: parseNotes(data.base_notes_fr),
+    base_notes_ar: parseNotes(data.base_notes_ar),
+    images,
+    is_featured: data.is_featured,
+    is_bestseller: data.is_bestseller,
+    is_published: data.is_published,
+  };
+
   // 1. Insert product
-  const { data: product, error: productError } = await (admin.from("products") as any)
+  let { data: product, error: productError } = await (admin.from("products") as any)
     .insert({
-      slug: data.slug,
-      name_fr: data.name_fr,
-      name_ar: data.name_ar,
-      description_fr: data.description_fr,
-      description_ar: data.description_ar,
-      gender: data.gender,
-      classification: data.classification,
-      fragrance_family_id: data.fragrance_family_id || null,
-      seasons: data.seasons,
-      top_notes_fr: parseNotes(data.top_notes_fr),
-      top_notes_ar: parseNotes(data.top_notes_ar),
-      heart_notes_fr: parseNotes(data.heart_notes_fr),
-      heart_notes_ar: parseNotes(data.heart_notes_ar),
-      base_notes_fr: parseNotes(data.base_notes_fr),
-      base_notes_ar: parseNotes(data.base_notes_ar),
-      images,
-      is_featured: data.is_featured,
-      is_bestseller: data.is_bestseller,
-      is_published: data.is_published,
+      ...basePayload,
+      landing_page_mode: data.landing_page_mode,
+      landing_page_images: landingPageImages,
     })
     .select("id")
     .single();
 
+  // If landing page columns don't exist yet and mode is standard with no landing images, fallback cleanly
+  if (
+    productError &&
+    (productError.code === "42703" || productError.message?.includes("landing_page")) &&
+    data.landing_page_mode === "standard" &&
+    landingPageImages.length === 0
+  ) {
+    const retry = await (admin.from("products") as any)
+      .insert(basePayload)
+      .select("id")
+      .single();
+    product = retry.data;
+    productError = retry.error;
+  }
+
   if (productError || !product?.id) {
     console.error("[createProduct] error:", productError?.message);
+    if (productError?.code === "42703" || productError?.message?.includes("landing_page")) {
+      return {
+        error:
+          locale === "ar"
+            ? "يرجى تنفيذ ملف التحديث '00009_product_landing_page.sql' في محرر SQL على Supabase لتفعيل ميزة صفحة الهبوط."
+            : "Veuillez exécuter la migration SQL '00009_product_landing_page.sql' dans l'éditeur SQL Supabase pour activer le mode Page Landing.",
+      };
+    }
     if (productError?.message?.includes("fragrance_classification")) {
       return { error: "Veuillez exécuter la migration SQL '00006_expand_classification_enum.sql' dans l'éditeur SQL Supabase pour activer les classifications X2 à X8." };
     }
@@ -175,6 +315,12 @@ export async function createProduct(
     return { error: "Erreur lors de la création des variantes." };
   }
 
+  revalidatePath(`/fr/shop/${data.slug}`);
+  revalidatePath(`/ar/shop/${data.slug}`);
+  revalidatePath(`/fr/shop`);
+  revalidatePath(`/ar/shop`);
+  revalidatePath(`/${locale}/admin/products`);
+
   redirect(`/${locale}/admin/products`);
 }
 
@@ -202,6 +348,7 @@ export async function updateProduct(
     ...raw,
     seasons,
     variants,
+    landing_page_mode: raw.landing_page_mode || "standard",
     is_featured: raw.is_featured === "true" || raw.is_featured === "on",
     is_bestseller: raw.is_bestseller === "true" || raw.is_bestseller === "on",
     is_published: raw.is_published === "true" || raw.is_published === "on",
@@ -216,43 +363,74 @@ export async function updateProduct(
   }
 
   const data = parsed.data;
-  const admin = createAdminClient();
+  const images = parseUrlArray(data.images);
+  const landingPageImages = parseUrlArray(data.landing_page_images);
 
-  let images: string[] = [];
-  try {
-    images = data.images ? JSON.parse(data.images) : [];
-  } catch {
-    images = data.images ? [data.images] : [];
+  if (data.landing_page_mode !== "standard" && landingPageImages.length === 0) {
+    return {
+      error:
+        locale === "ar"
+          ? "يرجى إضافة صورة واحدة على الأقل لصفحة الهبوط أو اختيار وضع صفحة التفاصيل العادية."
+          : "Veuillez ajouter au moins une image pour la page landing, ou sélectionner le mode Fiche Produit Normale.",
+    };
   }
 
+  const admin = createAdminClient();
+
+  const basePayload = {
+    slug: data.slug,
+    name_fr: data.name_fr,
+    name_ar: data.name_ar,
+    description_fr: data.description_fr,
+    description_ar: data.description_ar,
+    gender: data.gender,
+    classification: data.classification,
+    fragrance_family_id: data.fragrance_family_id || null,
+    seasons: data.seasons,
+    top_notes_fr: parseNotes(data.top_notes_fr),
+    top_notes_ar: parseNotes(data.top_notes_ar),
+    heart_notes_fr: parseNotes(data.heart_notes_fr),
+    heart_notes_ar: parseNotes(data.heart_notes_ar),
+    base_notes_fr: parseNotes(data.base_notes_fr),
+    base_notes_ar: parseNotes(data.base_notes_ar),
+    images,
+    is_featured: data.is_featured,
+    is_bestseller: data.is_bestseller,
+    is_published: data.is_published,
+    updated_at: new Date().toISOString(),
+  };
+
   // 1. Update product
-  const { error: productError } = await (admin.from("products") as any)
+  let { error: productError } = await (admin.from("products") as any)
     .update({
-      slug: data.slug,
-      name_fr: data.name_fr,
-      name_ar: data.name_ar,
-      description_fr: data.description_fr,
-      description_ar: data.description_ar,
-      gender: data.gender,
-      classification: data.classification,
-      fragrance_family_id: data.fragrance_family_id || null,
-      seasons: data.seasons,
-      top_notes_fr: parseNotes(data.top_notes_fr),
-      top_notes_ar: parseNotes(data.top_notes_ar),
-      heart_notes_fr: parseNotes(data.heart_notes_fr),
-      heart_notes_ar: parseNotes(data.heart_notes_ar),
-      base_notes_fr: parseNotes(data.base_notes_fr),
-      base_notes_ar: parseNotes(data.base_notes_ar),
-      images,
-      is_featured: data.is_featured,
-      is_bestseller: data.is_bestseller,
-      is_published: data.is_published,
-      updated_at: new Date().toISOString(),
+      ...basePayload,
+      landing_page_mode: data.landing_page_mode,
+      landing_page_images: landingPageImages,
     })
     .eq("id", productId);
 
+  if (
+    productError &&
+    (productError.code === "42703" || productError.message?.includes("landing_page")) &&
+    data.landing_page_mode === "standard" &&
+    landingPageImages.length === 0
+  ) {
+    const retry = await (admin.from("products") as any)
+      .update(basePayload)
+      .eq("id", productId);
+    productError = retry.error;
+  }
+
   if (productError) {
     console.error("[updateProduct] error:", productError.message);
+    if (productError?.code === "42703" || productError?.message?.includes("landing_page")) {
+      return {
+        error:
+          locale === "ar"
+            ? "يرجى تنفيذ ملف التحديث '00009_product_landing_page.sql' في محرر SQL على Supabase لتفعيل ميزة صفحة الهبوط."
+            : "Veuillez exécuter la migration SQL '00009_product_landing_page.sql' dans l'éditeur SQL Supabase pour activer le mode Page Landing.",
+      };
+    }
     if (productError.message?.includes("fragrance_classification")) {
       return { error: "Veuillez exécuter la migration SQL '00006_expand_classification_enum.sql' dans l'éditeur SQL Supabase pour activer les classifications X2 à X8." };
     }
@@ -280,6 +458,12 @@ export async function updateProduct(
     console.error("[updateProduct] variants error:", variantsError.message);
     return { error: "Erreur lors de la mise à jour des variantes." };
   }
+
+  revalidatePath(`/fr/shop/${data.slug}`);
+  revalidatePath(`/ar/shop/${data.slug}`);
+  revalidatePath(`/fr/shop`);
+  revalidatePath(`/ar/shop`);
+  revalidatePath(`/${locale}/admin/products`);
 
   redirect(`/${locale}/admin/products`);
 }

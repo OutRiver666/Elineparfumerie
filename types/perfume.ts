@@ -1,3 +1,5 @@
+export type LandingPageMode = "standard" | "landing_only" | "both";
+
 export interface PerfumeVariant {
   id: string;
   size: "25ml" | "30ml" | "50ml" | "80ml" | "100ml";
@@ -32,6 +34,8 @@ export interface Perfume {
   };
   variants: PerfumeVariant[];
   images: string[];
+  landingPageMode?: LandingPageMode;
+  landingPageImages?: string[];
   isFeatured?: boolean;
   isBestseller?: boolean;
   isNew?: boolean;

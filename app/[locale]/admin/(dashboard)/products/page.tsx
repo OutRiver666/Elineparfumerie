@@ -29,6 +29,7 @@ import {
   Layers,
   Flame,
   CheckCircle2,
+  Smartphone,
 } from "lucide-react";
 
 interface AdminProductsPageProps {
@@ -55,18 +56,34 @@ interface AdminProduct {
   isFeatured: boolean;
   isBestseller: boolean;
   isPublished: boolean;
+  landingPageMode: "standard" | "landing_only" | "both";
+  landingImagesCount: number;
 }
 
 async function getAllProductsForAdmin(): Promise<AdminProduct[]> {
   try {
     const admin = createAdminClient();
-    const { data, error } = await (admin.from("products") as any)
-      .select(`
-        id, slug, name_fr, name_ar, gender, is_featured, is_bestseller, is_published, classification,
-        fragrance_families (name_fr, name_ar),
-        product_variants (id, size, sku, price_dzd, compare_at_price_dzd, stock_quantity, is_active)
-      `)
+    const baseSelect = `
+      id, slug, name_fr, name_ar, gender, is_featured, is_bestseller, is_published, classification,
+      fragrance_families (name_fr, name_ar),
+      product_variants (id, size, sku, price_dzd, compare_at_price_dzd, stock_quantity, is_active)
+    `;
+    const extendedSelect = `
+      ${baseSelect},
+      landing_page_mode, landing_page_images
+    `;
+
+    let { data, error } = await (admin.from("products") as any)
+      .select(extendedSelect)
       .order("created_at", { ascending: false });
+
+    if (error && (error.code === "42703" || error.message?.includes("landing_page"))) {
+      const fallback = await (admin.from("products") as any)
+        .select(baseSelect)
+        .order("created_at", { ascending: false });
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error || !data) return [];
 
@@ -91,6 +108,13 @@ async function getAllProductsForAdmin(): Promise<AdminProduct[]> {
       isFeatured: Boolean(item.is_featured),
       isBestseller: Boolean(item.is_bestseller),
       isPublished: Boolean(item.is_published),
+      landingPageMode:
+        item.landing_page_mode === "landing_only" || item.landing_page_mode === "both"
+          ? item.landing_page_mode
+          : "standard",
+      landingImagesCount: Array.isArray(item.landing_page_images)
+        ? item.landing_page_images.length
+        : 0,
     }));
   } catch {
     return [];
@@ -283,7 +307,7 @@ export default async function AdminProductsPage({
                             <p className="text-[10px] text-zinc-400 font-mono">
                               {product.slug}
                             </p>
-                            <div className="flex gap-1.5 mt-0.5">
+                            <div className="flex flex-wrap gap-1.5 mt-0.5">
                               {product.isBestseller && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200/60 text-[9px] font-bold rounded-md">
                                   BESTSELLER
@@ -292,6 +316,18 @@ export default async function AdminProductsPage({
                               {product.classification && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 bg-zinc-100 text-zinc-700 text-[9px] font-bold rounded-md">
                                   {product.classification}
+                                </span>
+                              )}
+                              {product.landingPageMode === "landing_only" && product.landingImagesCount > 0 && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-violet-50 text-violet-700 border border-violet-200/70 text-[9px] font-bold rounded-md">
+                                  <Smartphone className="w-2.5 h-2.5" />
+                                  {isAr ? "صفحة هبوط" : "LANDING PAGE"}
+                                </span>
+                              )}
+                              {product.landingPageMode === "both" && product.landingImagesCount > 0 && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-200/70 text-[9px] font-bold rounded-md">
+                                  <Layers className="w-2.5 h-2.5" />
+                                  {isAr ? "هبوط + تفاصيل" : "LANDING + FICHE"}
                                 </span>
                               )}
                             </div>
