@@ -5,7 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getTeamMembers, getEffectiveAdminPermissions } from "@/lib/services/team.service";
 import { TeamManagerClient } from "@/components/admin/team-manager-client";
 import { AccessDenied } from "@/components/admin/access-denied";
-import { Users } from "lucide-react";
+import { Users, ShieldCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -50,18 +50,21 @@ export default async function AdminTeamPage({ params }: AdminTeamPageProps) {
   const sanitizedMembers = rawTeamMembers.map(({ temporaryPassword, ...safe }) => safe);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 sm:space-y-7 font-outfit">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-luxury-border/30">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
         <div>
-          <span className="text-[11px] uppercase tracking-widest text-luxury-accent font-semibold block mb-1">
-            {isAr ? "التحكم في الأذونات والصلاحيات" : "Sécurité & Contrôle des Accès (RBAC)"}
-          </span>
-          <h2 className="font-serif text-2xl font-medium text-luxury-text flex items-center gap-2">
-            <Users className="w-5 h-5 text-luxury-accent" />
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-full">
+              <ShieldCheck className="w-3 h-3 text-amber-600" />
+              {isAr ? "التحكم في الأذونات والصلاحيات" : "Sécurité & Contrôle des Accès (RBAC)"}
+            </span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900 flex items-center gap-2.5">
+            <Users className="w-6 h-6 text-zinc-800" />
             <span>{isAr ? "إدارة الفريق والأدوار الإدارية" : "Gestion de l'Équipe & Rôles"}</span>
           </h2>
-          <p className="text-xs text-luxury-text-secondary mt-1">
+          <p className="text-xs text-zinc-500 mt-0.5">
             {isAr
               ? "تحكّم في ما يمكن لكل موظف أو مؤكد طلبيات رؤيته والقيام به في لوحة الإدارة."
               : "Contrôlez avec précision les modules et données visibles par chaque membre du personnel."}

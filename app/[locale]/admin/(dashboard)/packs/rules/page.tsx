@@ -20,7 +20,7 @@ export default async function AdminPackRulesPage({ params }: PackRulesPageProps)
   const tiers = await getAdminCustomRules();
 
   return (
-    <div className="p-6 lg:p-10 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto font-outfit">
       <PackRulesClient tiers={tiers} locale={locale} />
     </div>
   );

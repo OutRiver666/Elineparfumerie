@@ -75,6 +75,7 @@ const config: Config = {
       fontFamily: {
         serif: ["var(--font-serif)", "Playfair Display", "Cormorant Garamond", "Georgia", "serif"],
         sans: ["var(--font-sans)", "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+        outfit: ["var(--font-outfit)", "Outfit", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
         arabic: ["var(--font-arabic)", "Amiri", "IBM Plex Sans Arabic", "Noto Naskh Arabic", "serif"],
       },
       boxShadow: {

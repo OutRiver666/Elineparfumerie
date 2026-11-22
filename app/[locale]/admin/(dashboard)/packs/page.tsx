@@ -26,7 +26,7 @@ export default async function AdminPacksPage({ params }: PacksPageProps) {
   ]);
 
   return (
-    <div className="p-6 lg:p-10 max-w-7xl mx-auto">
+    <div className="space-y-6 font-outfit">
       <PacksManagerClient
         bundles={bundles}
         availableProducts={availableProducts}

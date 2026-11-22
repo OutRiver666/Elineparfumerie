@@ -7,6 +7,14 @@ import { formatPrice } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
   TrendingUp,
   Package,
   ShoppingBag,
@@ -18,6 +26,9 @@ import {
   Inbox,
   Plus,
   Lock,
+  Banknote,
+  Sparkles,
+  ExternalLink,
 } from "lucide-react";
 import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -37,6 +48,7 @@ export default async function AdminDashboardPage({
   const resolved = await params;
   const locale = (resolved.locale as Locale) || "fr";
   const dict = getDictionary(locale);
+  const isAr = locale === "ar";
 
   // Check auth and permissions
   const supabase = await createServerSupabaseClient();
@@ -65,68 +77,93 @@ export default async function AdminDashboardPage({
   const newOrdersCount = orders.filter((o) => o.status === "new").length;
   const preparingOrdersCount = orders.filter((o) => o.status === "preparing").length;
   const shippedOrdersCount = orders.filter((o) => o.status === "shipped").length;
+  const deliveredOrdersCount = orders.filter((o) => o.status === "delivered").length;
   const cancelledOrdersCount = orders.filter(
     (o) => o.status === "cancelled" || o.status === "returned"
   ).length;
 
-  const recentOrders = orders.slice(0, 5);
+  const recentOrders = orders.slice(0, 6);
 
   const revenueMetrics = [
     {
-      title: locale === "ar" ? "إجمالي الطلبات (Ordered)" : "Revenu Commandé",
+      title: isAr ? "إجمالي الطلبات المسجلة" : "Volume Commandé Brut",
       value: formatPrice(analytics.orderedRevenueDZD, locale),
-      subtitle: locale === "ar" ? "كل الطلبيات المسجلة عبر الموقع" : "Volume brut des commandes passées",
+      subtitle: isAr ? "كل الطلبيات المسجلة عبر المتجر" : "Toutes commandes passées sur la boutique",
       trend: `${analytics.totalOrdersCount} cmd`,
+      trendType: "neutral" as const,
       variant: "default" as const,
+      icon: ShoppingBag,
     },
     {
-      title: locale === "ar" ? "المبيعات المؤكدة (Confirmed)" : "Revenu Confirmé",
+      title: isAr ? "المبيعات المؤكدة هاتفياً" : "Chiffre d'Affaires Confirmé",
       value: formatPrice(analytics.confirmedRevenueDZD, locale),
-      subtitle: locale === "ar" ? "تم التحقق منها هاتفياً وجاهزة للشحن" : "Confirmé au téléphone avec les clients",
-      trend: "Validation",
+      subtitle: isAr ? "طلبيات تم تأكيدها وجاهزة للإرسال" : "Confirmé au téléphone avec les clients",
+      trend: "Validé",
+      trendType: "positive" as const,
       variant: "default" as const,
+      icon: TrendingUp,
     },
     {
-      title: locale === "ar" ? "الطلبات المسلّمة (Delivered)" : "Revenu Livré",
+      title: isAr ? "الطلبيات المسلّمة للزبائن" : "Revenu Livré aux Clients",
       value: formatPrice(analytics.deliveredRevenueDZD, locale),
-      subtitle: locale === "ar" ? "استلمها الزبائن في الولايات" : "Colis remis en main propre aux clients",
+      subtitle: isAr ? "طرود مستلمة بنجاح في الولايات" : "Colis remis en main propre (58 Wilayas)",
       trend: `${analytics.deliveredOrdersCount} livrées`,
+      trendType: "positive" as const,
       variant: "highlight" as const,
+      icon: CheckCircle2,
     },
     {
-      title: locale === "ar" ? "المبالغ المحصلة (Collected)" : "Fonds Encaissés (Cash)",
+      title: isAr ? "الأموال المحصلة فعلياً (Cash)" : "Fonds Net Encaissés (Cash)",
       value: formatPrice(analytics.collectedRevenueDZD, locale),
-      subtitle: locale === "ar" ? "أموال محصلة ومودعة فعلياً" : "Montant net viré par les transporteurs",
+      subtitle: isAr ? "مبالغ محصلة ومودعة في الحساب" : "Montant viré par les transporteurs",
       trend: "Encaissé",
+      trendType: "positive" as const,
       variant: "accent" as const,
+      icon: Banknote,
     },
   ];
 
   return (
-    <div className="space-y-8">
-      {/* Top Banner / Welcome */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4">
+    <div className="space-y-7 font-outfit">
+      {/* Top Banner / Welcome with clean spacing */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
         <div>
-          <span className="text-[11px] uppercase tracking-widest text-luxury-accent font-semibold block mb-1">
-            {locale === "ar" ? "مؤشرات الأداء المالي والتشغيلي" : "Performance Commerciale & Logistique"}
-          </span>
-          <h2 className="font-serif text-2xl sm:text-3xl font-medium text-luxury-text">
-            {locale === "ar" ? "لوحة المتابعة الشاملة" : "Vue Générale de l'Activité"}
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-full">
+              <Sparkles className="w-3 h-3 text-amber-600" />
+              {isAr ? "متابعة الأداء الحي" : "Performance en Direct"}
+            </span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900">
+            {isAr ? "لوحة المتابعة الشاملة" : "Vue Générale de l'Activité"}
           </h2>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {isAr
+              ? "متابعة فورية للمداخيل، الشحن عبر EcoTrack والطلبيات عبر 58 ولاية."
+              : "Suivi en temps réel des encaissements COD, expéditions EcoTrack et livraisons."}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2.5">
+          <Link href={`/${locale}`} target="_blank">
+            <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-zinc-200 text-zinc-700 hover:bg-zinc-100">
+              <ExternalLink className="w-3.5 h-3.5 text-zinc-500" />
+              <span>{isAr ? "معاينة المتجر" : "Boutique"}</span>
+            </Button>
+          </Link>
+
           {authInfo.permissions.products_manage && (
             <Link href={`/${locale}/admin/products`}>
-              <Button variant="default" size="sm" className="gap-1.5">
+              <Button size="sm" className="gap-1.5 rounded-lg bg-zinc-900 text-white hover:bg-black shadow-xs">
                 <Plus className="w-4 h-4" />
-                <span>{locale === "ar" ? "إضافة عطر جديد" : "Créer un parfum"}</span>
+                <span>{isAr ? "إضافة عطر جديد" : "Créer un Parfum"}</span>
               </Button>
             </Link>
           )}
         </div>
       </div>
 
-      {/* 4 REVENUE STAT CARDS (Ordered / Confirmed / Delivered / Collected) - Filtered by sales_analytics */}
+      {/* 4 REVENUE STAT CARDS */}
       {authInfo.permissions.sales_analytics ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {revenueMetrics.map((metric) => (
@@ -136,141 +173,272 @@ export default async function AdminDashboardPage({
               value={metric.value}
               subtitle={metric.subtitle}
               trend={metric.trend}
+              trendType={metric.trendType}
               variant={metric.variant}
+              icon={metric.icon}
             />
           ))}
         </div>
       ) : (
-        <div className="p-4 rounded-[4px] bg-luxury-secondary/60 border border-luxury-border/40 flex items-center justify-between text-xs text-luxury-text-secondary">
+        <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200/80 flex items-center justify-between text-xs text-zinc-600 shadow-xs">
           <div className="flex items-center gap-2.5">
-            <Lock className="w-4 h-4 text-luxury-accent shrink-0" />
+            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
-              {locale === "ar"
+              {isAr
                 ? "البيانات المالية والمداخيل اليومية محجوبة عن هذا الحساب (خاصة بالإدارة العليا)"
                 : "Chiffre d'affaires & statistiques financières confidentielles masquées pour votre profil."}
             </span>
           </div>
-          <span className="text-[10px] uppercase font-bold text-luxury-accent px-2 py-0.5 rounded bg-luxury-secondary">
-            {locale === "ar" ? "أمان مالي" : "Accès Restreint"}
+          <span className="text-[10px] uppercase font-bold text-amber-800 px-2 py-0.5 rounded-full bg-amber-100/70 border border-amber-200/60">
+            {isAr ? "وصول محمي" : "Accès Restreint"}
           </span>
         </div>
       )}
 
-      {/* OPERATIONAL STATUS COUNTERS */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-[4px] border border-luxury-border/30">
-          <div className="flex items-center space-x-2 rtl:space-x-reverse text-luxury-text-muted text-xs mb-1">
-            <Clock className="w-3.5 h-3.5 text-amber-600" />
-            <span>{locale === "ar" ? "طلبيات جديدة" : "Nouvelles Commandes"}</span>
+      {/* OPERATIONAL STATUS PIPELINE */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <Link
+          href={`/${locale}/admin/orders`}
+          className="group relative overflow-hidden rounded-xl border border-zinc-200/80 bg-white p-4 transition-all duration-200 hover:border-amber-300 hover:shadow-xs"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-zinc-500 text-xs font-medium">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-50 text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                <Clock className="w-3.5 h-3.5" />
+              </div>
+              <span>{isAr ? "طلبيات جديدة" : "Nouvelles"}</span>
+            </div>
+            {newOrdersCount > 0 && (
+              <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+            )}
           </div>
-          <span className="text-xl font-semibold text-luxury-text">{newOrdersCount}</span>
-        </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-2xl font-bold text-zinc-900 tracking-tight">
+              {newOrdersCount}
+            </span>
+            <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+              {isAr ? "بحاجة تأكيد" : "À confirmer"}
+            </span>
+          </div>
+        </Link>
 
-        <div className="bg-white p-4 rounded-[4px] border border-luxury-border/30">
-          <div className="flex items-center space-x-2 rtl:space-x-reverse text-luxury-text-muted text-xs mb-1">
-            <Package className="w-3.5 h-3.5 text-blue-600" />
-            <span>{locale === "ar" ? "قيد التحضير في الورشة" : "En Préparation"}</span>
+        <Link
+          href={`/${locale}/admin/orders`}
+          className="group relative overflow-hidden rounded-xl border border-zinc-200/80 bg-white p-4 transition-all duration-200 hover:border-blue-300 hover:shadow-xs"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-zinc-500 text-xs font-medium">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                <Package className="w-3.5 h-3.5" />
+              </div>
+              <span>{isAr ? "قيد التحضير" : "En Préparation"}</span>
+            </div>
           </div>
-          <span className="text-xl font-semibold text-luxury-text">{preparingOrdersCount}</span>
-        </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-2xl font-bold text-zinc-900 tracking-tight">
+              {preparingOrdersCount}
+            </span>
+            <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+              {isAr ? "في الورشة" : "En cours"}
+            </span>
+          </div>
+        </Link>
 
-        <div className="bg-white p-4 rounded-[4px] border border-luxury-border/30">
-          <div className="flex items-center space-x-2 rtl:space-x-reverse text-luxury-text-muted text-xs mb-1">
-            <Truck className="w-3.5 h-3.5 text-purple-600" />
-            <span>{locale === "ar" ? "مع شركة التوصيل" : "En Cours de Livraison"}</span>
+        <Link
+          href={`/${locale}/admin/orders`}
+          className="group relative overflow-hidden rounded-xl border border-zinc-200/80 bg-white p-4 transition-all duration-200 hover:border-purple-300 hover:shadow-xs"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-zinc-500 text-xs font-medium">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-purple-50 text-purple-600 group-hover:bg-purple-500 group-hover:text-white transition-colors">
+                <Truck className="w-3.5 h-3.5" />
+              </div>
+              <span>{isAr ? "مع شركة التوصيل" : "En Livraison"}</span>
+            </div>
           </div>
-          <span className="text-xl font-semibold text-luxury-text">{shippedOrdersCount}</span>
-        </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-2xl font-bold text-zinc-900 tracking-tight">
+              {shippedOrdersCount}
+            </span>
+            <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full">
+              {isAr ? "EcoTrack" : "En route"}
+            </span>
+          </div>
+        </Link>
 
-        <div className="bg-white p-4 rounded-[4px] border border-luxury-border/30">
-          <div className="flex items-center space-x-2 rtl:space-x-reverse text-luxury-text-muted text-xs mb-1">
-            <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-            <span>{locale === "ar" ? "ملغاة أو مرتجعة" : "Annulées / Retours"}</span>
+        <Link
+          href={`/${locale}/admin/orders`}
+          className="group relative overflow-hidden rounded-xl border border-zinc-200/80 bg-white p-4 transition-all duration-200 hover:border-rose-300 hover:shadow-xs"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-zinc-500 text-xs font-medium">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-rose-50 text-rose-600 group-hover:bg-rose-500 group-hover:text-white transition-colors">
+                <AlertCircle className="w-3.5 h-3.5" />
+              </div>
+              <span>{isAr ? "إلغاء / مرتجع" : "Annulées / Retours"}</span>
+            </div>
           </div>
-          <span className="text-xl font-semibold text-luxury-text">{cancelledOrdersCount}</span>
-        </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-2xl font-bold text-zinc-900 tracking-tight">
+              {cancelledOrdersCount}
+            </span>
+            <span className="text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full">
+              {isAr ? "متابعة" : "Incidents"}
+            </span>
+          </div>
+        </Link>
       </div>
 
-      {/* RECENT ORDERS TABLE */}
-      <div className="bg-white rounded-[4px] border border-luxury-border/30 p-6">
-        <div className="flex items-center justify-between mb-6">
+      {/* RECENT ORDERS CARD (Modern Shadcn Card) */}
+      <Card className="border-zinc-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02),0_6px_24px_rgba(0,0,0,0.03)]">
+        <CardHeader className="flex flex-row items-center justify-between p-5 pb-4 border-b border-zinc-100">
           <div>
-            <h3 className="font-serif text-lg font-medium text-luxury-text">
-              {locale === "ar" ? "أحدث الطلبيات المسجلة" : "Dernières Commandes COD"}
-            </h3>
-            <p className="text-xs text-luxury-text-secondary">
-              {locale === "ar" ? "متابعة فورية للحالة والتسليم في الولايات" : "Flux temps réel des commandes à traiter"}
-            </p>
+            <CardTitle className="text-base font-bold text-zinc-900">
+              {isAr ? "أحدث طلبيات الدفع عند الاستلام (COD)" : "Dernières Commandes COD Récentes"}
+            </CardTitle>
+            <CardDescription className="text-xs text-zinc-500 mt-0.5">
+              {isAr
+                ? "متابعة مباشرة للطلبيات، الزبائن والولايات في الوقت الفعلي."
+                : "Flux des commandes reçues avec état de validation et livraison."}
+            </CardDescription>
           </div>
           <Link href={`/${locale}/admin/orders`}>
-            <Button variant="ghost" size="sm" className="text-xs">
-              <span>{locale === "ar" ? "عرض كل الطلبيات" : "Voir toutes les commandes"}</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1 rtl:ml-0 rtl:mr-1" />
+            <Button variant="ghost" size="sm" className="gap-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 rounded-lg">
+              <span>{isAr ? "فتح إدارة الطلبيات" : "Gérer les commandes"}</span>
+              <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
             </Button>
           </Link>
-        </div>
+        </CardHeader>
 
-        {recentOrders.length === 0 ? (
-          <div className="p-12 text-center text-luxury-text-muted text-xs">
-            <Inbox className="w-8 h-8 mx-auto mb-2 text-luxury-border" />
-            <p className="font-medium text-luxury-text text-sm">
-              {locale === "ar" ? "لا توجد طلبات جديدة حتى الآن" : "Aucune commande pour le moment"}
-            </p>
-            <p className="text-xs text-luxury-text-muted mt-1">
-              {locale === "ar"
-                ? "ستظهر الطلبات هنا فور قيام الزبائن بإتمام عملية الشراء من المتجر."
-                : "Les commandes des clients s'afficheront ici en direct dès leur validation."}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left rtl:text-right">
-              <thead className="bg-luxury-secondary/60 text-luxury-text-muted uppercase tracking-wider text-[10px]">
-                <tr>
-                  <th className="py-2.5 px-3">Réf</th>
-                  <th className="py-2.5 px-3">{locale === "ar" ? "الزبون" : "Client"}</th>
-                  <th className="py-2.5 px-3">{locale === "ar" ? "الولاية" : "Wilaya"}</th>
-                  <th className="py-2.5 px-3">{locale === "ar" ? "المنتجات" : "Sélection"}</th>
-                  <th className="py-2.5 px-3">{locale === "ar" ? "المبلغ" : "Total"}</th>
-                  <th className="py-2.5 px-3">{locale === "ar" ? "الحالة" : "Statut"}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-luxury-border/30 text-luxury-text">
-                {recentOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-luxury-secondary/40 transition-colors">
-                    <td className="py-3 px-3 font-semibold font-mono">{order.reference}</td>
-                    <td className="py-3 px-3 font-medium">{order.customer.name}</td>
-                    <td className="py-3 px-3 text-luxury-text-secondary">
-                      {order.wilaya} — {order.commune}
-                    </td>
-                    <td className="py-3 px-3 text-luxury-text-secondary max-w-xs truncate">
-                      {order.items.map((i) => `${i.name} (${i.size})`).join(", ")}
-                    </td>
-                    <td className="py-3 px-3 font-semibold">{formatPrice(order.total, locale)}</td>
-                    <td className="py-3 px-3">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-[3px] text-[10px] font-semibold ${
-                          order.status === "confirmed"
-                            ? "bg-amber-100 text-amber-900"
-                            : order.status === "preparing"
-                            ? "bg-blue-100 text-blue-900"
-                            : order.status === "shipped"
-                            ? "bg-purple-100 text-purple-900"
-                            : order.status === "delivered"
-                            ? "bg-emerald-100 text-emerald-900"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {order.status}
-                      </span>
-                    </td>
+        <CardContent className="p-0">
+          {recentOrders.length === 0 ? (
+            <div className="p-12 text-center text-zinc-400 text-xs">
+              <Inbox className="w-8 h-8 mx-auto mb-2 text-zinc-300" />
+              <p className="font-semibold text-zinc-800 text-sm">
+                {isAr ? "لا توجد طلبات جديدة حتى الآن" : "Aucune commande pour le moment"}
+              </p>
+              <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
+                {isAr
+                  ? "ستظهر الطلبات هنا فور قيام الزبائن بإتمام عملية الشراء من المتجر."
+                  : "Les commandes des clients s'afficheront ici en direct dès leur validation."}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left rtl:text-right">
+                <thead className="bg-zinc-50/80 text-zinc-400 uppercase tracking-wider text-[10px] font-bold border-b border-zinc-100">
+                  <tr>
+                    <th className="py-3 px-4">Réf</th>
+                    <th className="py-3 px-4">{isAr ? "الزبون" : "Client"}</th>
+                    <th className="py-3 px-4">{isAr ? "الولاية والبلدية" : "Destination"}</th>
+                    <th className="py-3 px-4">{isAr ? "المنتجات" : "Sélection"}</th>
+                    <th className="py-3 px-4">{isAr ? "المبلغ" : "Total COD"}</th>
+                    <th className="py-3 px-4">{isAr ? "الحالة" : "Statut"}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 text-zinc-800 font-medium">
+                  {recentOrders.map((order) => {
+                    const initials = order.customer.name
+                      ? order.customer.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .slice(0, 2)
+                          .join("")
+                          .toUpperCase()
+                      : "CL";
+
+                    return (
+                      <tr
+                        key={order.id}
+                        className="hover:bg-zinc-50/70 transition-colors group"
+                      >
+                        <td className="py-3.5 px-4 font-mono font-semibold text-zinc-900">
+                          {order.reference}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar className="h-7 w-7 border-none bg-zinc-100">
+                              <AvatarFallback className="bg-zinc-100 text-zinc-700 text-[10px] font-bold">
+                                {initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-semibold text-zinc-900 leading-tight">
+                                {order.customer.name}
+                              </p>
+                              <p className="text-[11px] text-zinc-400 font-mono">
+                                {order.customer.phone}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-zinc-100 text-zinc-700">
+                            {order.wilaya}
+                            {order.commune ? ` • ${order.commune}` : ""}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-zinc-600 max-w-xs truncate">
+                          {order.items
+                            .map((i) => `${i.name}${i.size ? ` (${i.size})` : ""}`)
+                            .join(", ")}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-zinc-900">
+                          {formatPrice(order.total, locale)}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-tight ${
+                              order.status === "new"
+                                ? "bg-amber-50 text-amber-800 border border-amber-200/70"
+                                : order.status === "confirmed"
+                                ? "bg-emerald-50 text-emerald-800 border border-emerald-200/70"
+                                : order.status === "preparing"
+                                ? "bg-blue-50 text-blue-800 border border-blue-200/70"
+                                : order.status === "shipped"
+                                ? "bg-purple-50 text-purple-800 border border-purple-200/70"
+                                : order.status === "delivered"
+                                ? "bg-teal-50 text-teal-800 border border-teal-200/70"
+                                : "bg-rose-50 text-rose-800 border border-rose-200/70"
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                order.status === "new"
+                                  ? "bg-amber-500 animate-pulse"
+                                  : order.status === "confirmed"
+                                  ? "bg-emerald-500"
+                                  : order.status === "preparing"
+                                  ? "bg-blue-500"
+                                  : order.status === "shipped"
+                                  ? "bg-purple-500"
+                                  : order.status === "delivered"
+                                  ? "bg-teal-500"
+                                  : "bg-rose-500"
+                              }`}
+                            />
+                            {order.status === "new"
+                              ? isAr ? "جديدة" : "Nouvelle"
+                              : order.status === "confirmed"
+                              ? isAr ? "مؤكدة" : "Confirmée"
+                              : order.status === "preparing"
+                              ? isAr ? "تحضير" : "Préparation"
+                              : order.status === "shipped"
+                              ? isAr ? "شحن" : "Expédiée"
+                              : order.status === "delivered"
+                              ? isAr ? "تم التسليم" : "Livrée"
+                              : isAr ? "ملغاة" : "Annulée"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

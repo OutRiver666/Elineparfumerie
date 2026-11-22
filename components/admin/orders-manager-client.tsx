@@ -31,6 +31,8 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Printer,
   ExternalLink,
   User,
@@ -45,6 +47,8 @@ import {
   Trash2,
   CheckCircle,
 } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card } from "@/components/ui/card";
 
 interface OrdersManagerClientProps {
   initialOrders: AdminOrder[];
@@ -64,56 +68,56 @@ const STATUS_CONFIG: Record<
   new: {
     labelFr: "Nouvelle",
     labelAr: "جديدة",
-    className: "bg-blue-50 text-blue-800 border-blue-200",
+    className: "bg-blue-50 text-blue-700 border-blue-200/80",
     stepIndex: 1,
     icon: Clock,
   },
   confirmed: {
     labelFr: "Confirmée",
     labelAr: "مؤكدة",
-    className: "bg-amber-50 text-amber-800 border-amber-200",
+    className: "bg-amber-50 text-amber-800 border-amber-200/80",
     stepIndex: 2,
     icon: CheckCircle2,
   },
   preparing: {
     labelFr: "En préparation",
     labelAr: "قيد التحضير",
-    className: "bg-indigo-50 text-indigo-800 border-indigo-200",
+    className: "bg-indigo-50 text-indigo-700 border-indigo-200/80",
     stepIndex: 3,
     icon: Package,
   },
   shipped: {
     labelFr: "Expédiée",
     labelAr: "مشحونة",
-    className: "bg-purple-50 text-purple-800 border-purple-200",
+    className: "bg-purple-50 text-purple-700 border-purple-200/80",
     stepIndex: 4,
     icon: Truck,
   },
   delivered: {
     labelFr: "Livrée",
     labelAr: "تم التسليم",
-    className: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    className: "bg-emerald-50 text-emerald-800 border-emerald-200/80",
     stepIndex: 5,
     icon: CheckCircle2,
   },
   cancelled: {
     labelFr: "Annulée",
     labelAr: "ملغاة",
-    className: "bg-red-50 text-red-800 border-red-200",
+    className: "bg-rose-50 text-rose-700 border-rose-200/80",
     stepIndex: -1,
     icon: XCircle,
   },
   returned: {
     labelFr: "Retournée",
     labelAr: "مرتجعة",
-    className: "bg-gray-50 text-gray-800 border-gray-200",
+    className: "bg-zinc-100 text-zinc-700 border-zinc-200",
     stepIndex: -1,
     icon: RotateCcw,
   },
   failed_delivery: {
     labelFr: "Échec livraison",
     labelAr: "فشل التسليم",
-    className: "bg-red-50 text-red-800 border-red-200",
+    className: "bg-rose-50 text-rose-700 border-rose-200/80",
     stepIndex: -1,
     icon: XCircle,
   },
@@ -134,6 +138,19 @@ function getWilayaLabel(code: string, loc: Locale = "fr"): string {
   return loc === "ar" ? `ولاية ${w.code} (${name})` : `Wilaya ${w.code} (${name})`;
 }
 
+function getPaginationRange(current: number, total: number): (number | string)[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 3) {
+    return [1, 2, 3, 4, "...", total];
+  }
+  if (current >= total - 2) {
+    return [1, "...", total - 3, total - 2, total - 1, total];
+  }
+  return [1, "...", current - 1, current, current + 1, "...", total];
+}
+
 export function OrdersManagerClient({
   initialOrders,
   locale,
@@ -141,6 +158,7 @@ export function OrdersManagerClient({
   const [orders, setOrders] = useState<AdminOrder[]>(initialOrders);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     // Automatically expand the first order if available for immediate convenience
     return initialOrders.length > 0 ? new Set([initialOrders[0].id]) : new Set();
@@ -171,8 +189,8 @@ export function OrdersManagerClient({
     });
   };
 
-  const expandAll = () => {
-    setExpandedIds(new Set(filteredOrders.map((o) => o.id)));
+  const expandAll = (ids?: string[]) => {
+    setExpandedIds(new Set(ids || paginatedOrders.map((o) => o.id)));
   };
 
   const collapseAll = () => {
@@ -572,59 +590,79 @@ export function OrdersManagerClient({
     return true;
   });
 
+  // Pagination (10 orders per page)
+  const ITEMS_PER_PAGE = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safePage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredOrders.length);
+  const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
+
   return (
     <div className="space-y-6">
       {/* Top Notification / Error Alert */}
       {errorMessage && (
-        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-[4px] text-xs flex items-center justify-between">
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center justify-between shadow-2xs">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-            <span>{errorMessage}</span>
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span className="font-medium">{errorMessage}</span>
           </div>
           <button
             onClick={() => setErrorMessage(null)}
-            className="text-red-600 hover:text-red-900 font-bold"
+            className="text-rose-600 hover:text-rose-900 font-bold p-1 rounded-md hover:bg-rose-100 transition-colors"
           >
             ✕
           </button>
         </div>
       )}
 
-      {/* Filter Pipeline Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+      {/* Modern Filter Pipeline Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
         {[
           { key: "all", count: orders.length, labelFr: "Toutes", labelAr: "الكل" },
-          { key: "new", count: newCount, labelFr: "Nouvelles", labelAr: "جديدة" },
-          { key: "confirmed", count: confirmedCount, labelFr: "Confirmées", labelAr: "مؤكدة" },
-          { key: "preparing", count: preparingCount, labelFr: "Préparation", labelAr: "تحضير" },
-          { key: "shipped", count: shippedCount, labelFr: "Expédiées", labelAr: "مشحونة" },
-          { key: "delivered", count: deliveredCount, labelFr: "Livrées", labelAr: "مسلمة" },
-          { key: "cancelled", count: cancelledCount, labelFr: "Annulées", labelAr: "ملغاة" },
+          { key: "new", count: newCount, labelFr: "Nouvelles", labelAr: "جديدة", dot: "bg-blue-500", highlight: newCount > 0 },
+          { key: "confirmed", count: confirmedCount, labelFr: "Confirmées", labelAr: "مؤكدة", dot: "bg-amber-500" },
+          { key: "preparing", count: preparingCount, labelFr: "Préparation", labelAr: "تحضير", dot: "bg-indigo-500" },
+          { key: "shipped", count: shippedCount, labelFr: "Expédiées", labelAr: "مشحونة", dot: "bg-purple-500" },
+          { key: "delivered", count: deliveredCount, labelFr: "Livrées", labelAr: "مسلمة", dot: "bg-emerald-500" },
+          { key: "cancelled", count: cancelledCount, labelFr: "Annulées", labelAr: "ملغاة", dot: "bg-rose-500" },
         ].map((s) => {
           const isSelected = selectedStatus === s.key;
           return (
             <button
               key={s.key}
-              onClick={() => setSelectedStatus(s.key)}
-              className={`p-3 text-center rounded-[4px] border transition-all cursor-pointer ${
+              onClick={() => {
+                setSelectedStatus(s.key);
+                setCurrentPage(1);
+              }}
+              className={`group relative overflow-hidden p-3.5 text-center rounded-xl border transition-all duration-150 cursor-pointer text-left rtl:text-right ${
                 isSelected
-                  ? "bg-luxury-text text-white border-luxury-text shadow-sm"
-                  : "bg-white border-luxury-border/30 hover:border-luxury-accent/50 text-luxury-text"
+                  ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
+                  : "bg-white border-zinc-200/80 hover:border-zinc-300 hover:shadow-xs text-zinc-900"
               }`}
             >
+              <div className="flex items-center justify-between mb-1">
+                <span
+                  className={`text-[11px] font-semibold tracking-wide capitalize ${
+                    isSelected ? "text-zinc-300" : "text-zinc-500"
+                  }`}
+                >
+                  {locale === "ar" ? s.labelAr : s.labelFr}
+                </span>
+                {s.dot && (
+                  <span
+                    className={`h-2 w-2 rounded-full ${s.dot} ${
+                      s.highlight && !isSelected ? "animate-ping" : ""
+                    }`}
+                  />
+                )}
+              </div>
               <p
-                className={`text-lg font-bold leading-tight ${
-                  isSelected ? "text-white" : "text-luxury-text"
+                className={`text-xl font-bold tracking-tight leading-none ${
+                  isSelected ? "text-white" : "text-zinc-900"
                 }`}
               >
                 {s.count}
-              </p>
-              <p
-                className={`text-[10px] uppercase tracking-wider mt-0.5 ${
-                  isSelected ? "text-white/80" : "text-luxury-text-muted"
-                }`}
-              >
-                {locale === "ar" ? s.labelAr : s.labelFr}
               </p>
             </button>
           );
@@ -632,37 +670,43 @@ export function OrdersManagerClient({
       </div>
 
       {/* Search & Bulk Control Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-[4px] border border-luxury-border/30">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-zinc-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-luxury-text-muted absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 rtl:left-auto rtl:right-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder={
               locale === "ar"
                 ? "بحث بالمرجع (CMD-...)، الزبون، الهاتف أو الولاية..."
                 : "Rechercher par référence (CMD-...), nom du client, téléphone, wilaya..."
             }
-            className="w-full text-xs pl-9 pr-4 rtl:pl-4 rtl:pr-9 py-2 border border-luxury-border/40 rounded-[3px] bg-luxury-secondary/20 focus:bg-white focus:outline-none focus:border-luxury-accent transition-colors"
+            className="w-full text-xs pl-10 pr-4 rtl:pl-4 rtl:pr-10 py-2.5 border border-zinc-200/80 rounded-lg bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900 transition-all font-medium text-zinc-900"
           />
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
           {searchQuery && (
             <button
-              onClick={() => setSearchQuery("")}
-              className="text-xs text-luxury-text-muted hover:text-luxury-text px-2 py-1"
+              onClick={() => {
+                setSearchQuery("");
+                setCurrentPage(1);
+              }}
+              className="text-xs font-semibold text-zinc-500 hover:text-zinc-900 px-2 py-1 transition-colors"
             >
               {locale === "ar" ? "مسح البحث" : "Effacer"}
             </button>
           )}
 
           <button
-            onClick={expandedIds.size === filteredOrders.length ? collapseAll : expandAll}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-luxury-border/40 rounded-[3px] text-xs text-luxury-text-secondary hover:bg-luxury-secondary transition-colors"
+            onClick={expandedIds.size === paginatedOrders.length ? collapseAll : () => expandAll(paginatedOrders.map((o) => o.id))}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-zinc-200/80 bg-zinc-50 hover:bg-zinc-100/80 text-xs font-semibold text-zinc-700 transition-colors shadow-2xs"
           >
-            {expandedIds.size === filteredOrders.length ? (
+            {expandedIds.size === paginatedOrders.length ? (
               <>
                 <Minimize2 className="w-3.5 h-3.5" />
                 <span>{locale === "ar" ? "طي الكل" : "Replier tout"}</span>
@@ -670,7 +714,7 @@ export function OrdersManagerClient({
             ) : (
               <>
                 <Maximize2 className="w-3.5 h-3.5" />
-                <span>{locale === "ar" ? "توسيع الكل" : "Déplier tout"}</span>
+                <span>{locale === "ar" ? "توسيع الصفحة" : "Déplier la page"}</span>
               </>
             )}
           </button>
@@ -679,12 +723,14 @@ export function OrdersManagerClient({
 
       {/* Professional Orders Table */}
       {filteredOrders.length === 0 ? (
-        <div className="bg-white rounded-[4px] border border-luxury-border/30 p-12 text-center text-luxury-text-muted text-xs">
-          <Inbox className="w-10 h-10 mx-auto mb-3 text-luxury-border" />
-          <p className="font-medium text-luxury-text text-sm">
+        <div className="bg-white rounded-xl border border-zinc-200/80 p-12 text-center text-zinc-500 text-xs shadow-xs">
+          <div className="w-12 h-12 rounded-full bg-zinc-100 flex items-center justify-center mx-auto mb-3 text-zinc-400">
+            <Inbox className="w-6 h-6" />
+          </div>
+          <p className="font-semibold text-zinc-900 text-sm">
             {locale === "ar" ? "لا توجد طلبيات مطابقة" : "Aucune commande trouvée"}
           </p>
-          <p className="text-xs text-luxury-text-muted mt-1 max-w-sm mx-auto">
+          <p className="text-xs text-zinc-400 mt-1 max-w-sm mx-auto leading-relaxed">
             {selectedStatus !== "all" || searchQuery
               ? locale === "ar"
                 ? "جرب تغيير معايير البحث أو اختيار تبويب آخر."
@@ -698,35 +744,35 @@ export function OrdersManagerClient({
               onClick={() => {
                 setSelectedStatus("all");
                 setSearchQuery("");
+                setCurrentPage(1);
               }}
-              className="mt-4 px-3 py-1.5 text-xs bg-luxury-secondary text-luxury-text rounded-[3px] hover:bg-luxury-border/30 transition-colors"
+              className="mt-4 px-4 py-2 text-xs font-semibold bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-colors shadow-2xs"
             >
               {locale === "ar" ? "إظهار كل الطلبيات" : "Afficher toutes les commandes"}
             </button>
           )}
         </div>
       ) : (
-        <div className="bg-white border border-luxury-border/30 rounded-[4px] shadow-sm overflow-hidden">
+        <div className="bg-white border border-zinc-200/80 rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.02),0_6px_24px_rgba(0,0,0,0.03)] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left rtl:text-right border-collapse">
               {/* Table Header */}
               <thead>
-                <tr className="bg-luxury-secondary/70 border-b border-luxury-border/40 text-luxury-text-muted uppercase tracking-wider text-[10px] font-semibold">
-                  <th className="py-3 px-3 w-10 text-center">#</th>
-                  <th className="py-3 px-4">{locale === "ar" ? "المرجع" : "Référence"}</th>
-                  <th className="py-3 px-4">{locale === "ar" ? "التاريخ" : "Date & Heure"}</th>
-                  <th className="py-3 px-4">{locale === "ar" ? "الزبون والهاتف" : "Client & Téléphone"}</th>
-                  <th className="py-3 px-4">{locale === "ar" ? "الولاية / البلدية" : "Wilaya & Commune"}</th>
-                  <th className="py-3 px-4">{locale === "ar" ? "المحتوى" : "Articles"}</th>
-                  <th className="py-3 px-4">{locale === "ar" ? "المبلغ COD" : "Total COD"}</th>
-                  <th className="py-3 px-4">{locale === "ar" ? "الحالة" : "Statut"}</th>
-                  <th className="py-3 px-4 text-center">{locale === "ar" ? "التفاصيل" : "Détails"}</th>
+                <tr className="bg-zinc-50/80 border-b border-zinc-100 text-zinc-400 uppercase tracking-wider text-[10px] font-bold">
+                  <th className="py-2.5 px-2 w-9 text-center">#</th>
+                  <th className="py-2.5 px-3 min-w-[125px]">{locale === "ar" ? "الطلب / التاريخ" : "Commande"}</th>
+                  <th className="py-2.5 px-3 min-w-[145px]">{locale === "ar" ? "الزبون والهاتف" : "Client & Contact"}</th>
+                  <th className="py-2.5 px-3 min-w-[120px]">{locale === "ar" ? "الوجهة" : "Destination"}</th>
+                  <th className="py-2.5 px-2.5 text-center min-w-[70px]">{locale === "ar" ? "القطع" : "Articles"}</th>
+                  <th className="py-2.5 px-3 min-w-[105px]">{locale === "ar" ? "المبلغ COD" : "Total COD"}</th>
+                  <th className="py-2.5 px-3 min-w-[160px]">{locale === "ar" ? "الحالة والناقل" : "Statut & Suivi"}</th>
+                  <th className="py-2.5 px-2.5 text-center w-20">{locale === "ar" ? "تفاصيل" : "Détails"}</th>
                 </tr>
               </thead>
 
               {/* Table Body with Expandable Rows */}
-              <tbody className="divide-y divide-luxury-border/20 text-luxury-text">
-                {filteredOrders.map((order, index) => {
+              <tbody className="divide-y divide-zinc-100 text-zinc-800">
+                {paginatedOrders.map((order, index) => {
                   const isExpanded = expandedIds.has(order.id);
                   const config = STATUS_CONFIG[order.status] || STATUS_CONFIG.new;
                   const StatusIcon = config.icon;
@@ -737,6 +783,15 @@ export function OrdersManagerClient({
                     0
                   );
 
+                  const initials = order.customer.name
+                    ? order.customer.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .slice(0, 2)
+                        .join("")
+                        .toUpperCase()
+                    : "CL";
+
                   return (
                     <React.Fragment key={order.id}>
                       {/* Summary Row (Clickable) */}
@@ -744,32 +799,32 @@ export function OrdersManagerClient({
                         onClick={() => toggleExpand(order.id)}
                         className={`transition-colors cursor-pointer select-none ${
                           isExpanded
-                            ? "bg-luxury-secondary/35 border-l-4 border-l-luxury-accent"
-                            : "hover:bg-luxury-secondary/20"
+                            ? "bg-amber-50/25 border-l-4 border-l-amber-500"
+                            : "hover:bg-zinc-50/70"
                         }`}
                       >
-                        {/* Expand Chevron */}
-                        <td className="py-3.5 px-3 text-center text-luxury-text-muted">
+                        {/* 1. Expand Chevron */}
+                        <td className="py-3 px-2 text-center text-zinc-400 w-9">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               toggleExpand(order.id);
                             }}
-                            className="p-1 rounded-[3px] hover:bg-luxury-secondary text-luxury-text-muted hover:text-luxury-text transition-colors"
+                            className="p-1 rounded-md hover:bg-zinc-100 text-zinc-400 hover:text-zinc-900 transition-colors cursor-pointer"
                           >
                             {isExpanded ? (
-                              <ChevronUp className="w-4 h-4 text-luxury-accent" />
+                              <ChevronUp className="w-4 h-4 text-amber-600" />
                             ) : (
                               <ChevronDown className="w-4 h-4" />
                             )}
                           </button>
                         </td>
 
-                        {/* Order Reference */}
-                        <td className="py-3.5 px-4 font-mono font-bold text-luxury-text text-xs whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <span>{order.reference || order.id}</span>
+                        {/* 2. Order Reference & Date */}
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-1 font-mono font-bold text-zinc-900 text-xs whitespace-nowrap">
+                            <span>{order.reference || order.id.slice(0, 8)}</span>
                             <button
                               type="button"
                               onClick={(e) => {
@@ -777,68 +832,69 @@ export function OrdersManagerClient({
                                 handleCopy(order.reference || order.id, order.id);
                               }}
                               title="Copier la référence"
-                              className="p-0.5 text-luxury-text-muted hover:text-luxury-accent"
+                              className="p-0.5 text-zinc-400 hover:text-zinc-900 cursor-pointer"
                             >
                               {copiedId === order.id ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <Check className="w-3 h-3 text-emerald-600" />
                               ) : (
-                                <Copy className="w-3.5 h-3.5" />
+                                <Copy className="w-3 h-3" />
                               )}
                             </button>
                           </div>
-                        </td>
-
-                        {/* Date & Time */}
-                        <td className="py-3.5 px-4 text-luxury-text-secondary whitespace-nowrap text-[11px]">
-                          <div>
+                          <div className="text-[11px] text-zinc-400 mt-0.5 whitespace-nowrap">
                             {new Date(order.createdAt).toLocaleDateString(
                               locale === "ar" ? "ar-DZ" : "fr-DZ",
-                              {
-                                day: "2-digit",
-                                month: "short",
-                                year: "numeric",
-                              }
-                            )}
-                          </div>
-                          <div className="text-[10px] text-luxury-text-muted font-mono">
-                            {new Date(order.createdAt).toLocaleTimeString(
-                              locale === "ar" ? "ar-DZ" : "fr-DZ",
-                              { hour: "2-digit", minute: "2-digit" }
-                            )}
+                              { day: "2-digit", month: "short" }
+                            )}{" "}
+                            <span className="font-mono text-[10px] text-zinc-400">
+                              {new Date(order.createdAt).toLocaleTimeString(
+                                locale === "ar" ? "ar-DZ" : "fr-DZ",
+                                { hour: "2-digit", minute: "2-digit" }
+                              )}
+                            </span>
                           </div>
                         </td>
 
-                        {/* Customer & Phone */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <p className="font-semibold text-luxury-text">
-                            {order.customer.name}
-                          </p>
-                          <a
-                            href={`tel:${order.customer.phone}`}
-                            onClick={(e) => e.stopPropagation()}
-                            dir="ltr"
-                            className="inline-flex items-center gap-1 text-[11px] font-mono text-luxury-text-secondary hover:text-luxury-accent hover:underline mt-0.5"
-                          >
-                            <Phone className="w-3 h-3 text-luxury-accent shrink-0" />
-                            <span>{order.customer.phone}</span>
-                          </a>
+                        {/* 3. Customer & Phone with Avatar */}
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6 border-none bg-zinc-100 shrink-0">
+                              <AvatarFallback className="bg-zinc-100 text-zinc-700 text-[9px] font-bold">
+                                {initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              <p className="font-bold text-zinc-900 leading-tight text-xs truncate max-w-[130px]">
+                                {order.customer.name}
+                              </p>
+                              <a
+                                href={`tel:${order.customer.phone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                dir="ltr"
+                                className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-400 hover:text-zinc-900 hover:underline mt-0.5 whitespace-nowrap"
+                              >
+                                <Phone className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                <span>{order.customer.phone}</span>
+                              </a>
+                            </div>
+                          </div>
                         </td>
 
-                        {/* Wilaya & Commune */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <div className="flex items-center gap-1 font-medium text-luxury-text">
-                            <MapPin className="w-3 h-3 text-luxury-accent shrink-0" />
+                        {/* 4. Wilaya & Commune */}
+                        <td className="py-3 px-3">
+                          <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-100 text-zinc-700 whitespace-nowrap">
+                            <MapPin className="w-2.5 h-2.5 text-amber-600 shrink-0" />
                             <span>{getWilayaLabel(order.wilaya, locale)}</span>
                           </div>
-                          <p className="text-[10px] text-luxury-text-muted truncate max-w-[160px]">
+                          <p className="text-[10px] text-zinc-400 mt-0.5 truncate max-w-[120px]">
                             {order.commune}
                           </p>
                         </td>
 
-                        {/* Items Summary */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[3px] bg-luxury-secondary text-luxury-text text-[11px] font-medium">
-                            <ShoppingBag className="w-3 h-3 text-luxury-accent" />
+                        {/* 5. Items Summary */}
+                        <td className="py-3 px-2.5 text-center whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-700 text-[11px] font-semibold">
+                            <ShoppingBag className="w-3 h-3 text-zinc-400 shrink-0" />
                             <span>
                               {totalItemsCount}{" "}
                               {locale === "ar"
@@ -846,37 +902,37 @@ export function OrdersManagerClient({
                                   ? "عطور"
                                   : "عطر"
                                 : totalItemsCount > 1
-                                ? "articles"
-                                : "article"}
+                                ? "pcs"
+                                : "pc"}
                             </span>
                           </span>
                         </td>
 
-                        {/* Total Amount & Paid Badge */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <p className="font-bold text-luxury-text text-sm">
+                        {/* 6. Total Amount & Paid Badge */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <p className="font-bold text-zinc-900 text-xs">
                             {formatPrice(order.total, locale)}
                           </p>
                           <div className="mt-0.5">
                             {order.isPaid ? (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                ✓ {locale === "ar" ? "محصلة" : "Encaissé"}
+                              <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                                ✓ {locale === "ar" ? "محصلة" : "Payé"}
                               </span>
                             ) : order.status !== "cancelled" ? (
-                              <span className="inline-flex items-center text-[9px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                COD {locale === "ar" ? "غير محصل" : "À percevoir"}
+                              <span className="inline-flex items-center text-[9px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200">
+                                COD
                               </span>
                             ) : null}
                           </div>
                         </td>
 
-                        {/* Status Badge & Navex Tracking */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
+                        {/* 7. Status Badge & Tracking */}
+                        <td className="py-3 px-3">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[3px] text-[11px] font-semibold border ${config.className}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${config.className}`}
                             >
-                              <StatusIcon className="w-3 h-3" />
+                              <span className="h-1.5 w-1.5 rounded-full bg-current shrink-0" />
                               <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
                             </span>
 
@@ -887,24 +943,16 @@ export function OrdersManagerClient({
                                     ? `Dernier appel: ${new Date(order.lastAttemptAt).toLocaleTimeString("fr-DZ", { hour: "2-digit", minute: "2-digit" })}`
                                     : undefined
                                 }
-                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border whitespace-nowrap ${
                                   order.callAttempts === 3
-                                    ? "bg-red-50 text-red-700 border-red-300 animate-pulse"
+                                    ? "bg-rose-50 text-rose-700 border-rose-300 animate-pulse"
                                     : order.callAttempts === 2
-                                    ? "bg-orange-50 text-orange-700 border-orange-300"
+                                    ? "bg-amber-50 text-amber-700 border-amber-300"
                                     : "bg-amber-50 text-amber-800 border-amber-300"
                                 }`}
                               >
-                                <PhoneCall className="w-2.5 h-2.5" />
-                                <span>
-                                  {order.callAttempts === 3
-                                    ? locale === "ar"
-                                      ? "3/3 غير مجيب"
-                                      : "3/3 Injoignable"
-                                    : locale === "ar"
-                                    ? `محاولة ${order.callAttempts}/3`
-                                    : `Tentative ${order.callAttempts}/3`}
-                                </span>
+                                <PhoneCall className="w-2.5 h-2.5 shrink-0" />
+                                <span>{order.callAttempts}/3</span>
                               </span>
                             ) : null}
                           </div>
@@ -920,18 +968,18 @@ export function OrdersManagerClient({
                                 <div className="mt-1 flex items-center gap-1 flex-wrap">
                                   <span
                                     title={`${carrierLabel}: ${order.trackingCode}`}
-                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold shadow-2xs ${
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shadow-2xs whitespace-nowrap ${
                                       isAnderson
-                                        ? "bg-[#251406] text-[#fb923c] border border-[#ea580c]/50"
-                                        : "bg-[#171717] text-[#e8c872] border border-[#c8a870]/40"
+                                        ? "bg-orange-950 text-orange-300 border border-orange-800/60"
+                                        : "bg-zinc-900 text-amber-300 border border-zinc-700"
                                     }`}
                                   >
                                     {isAnderson ? (
-                                      <Package className="w-2.5 h-2.5 text-[#fb923c]" />
+                                      <Package className="w-2.5 h-2.5 text-orange-400 shrink-0" />
                                     ) : (
-                                      <Truck className="w-2.5 h-2.5 text-[#e8c872]" />
+                                      <Truck className="w-2.5 h-2.5 text-amber-400 shrink-0" />
                                     )}
-                                    <span>{carrierLabel}: {order.trackingCode.slice(0, 8)}...</span>
+                                    <span>{carrierLabel}</span>
                                   </span>
                                   {order.shippingLabelUrl && (
                                     <a
@@ -940,7 +988,7 @@ export function OrdersManagerClient({
                                       rel="noopener noreferrer"
                                       onClick={(e) => e.stopPropagation()}
                                       title={locale === "ar" ? "طباعة بوليصة الشحن (PDF)" : `Imprimer bordereau PDF (${carrierLabel})`}
-                                      className="p-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
+                                      className="p-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 transition-colors cursor-pointer"
                                     >
                                       <FileText className="w-3 h-3" />
                                     </a>
@@ -952,7 +1000,7 @@ export function OrdersManagerClient({
                                       handleOpenWhatsApp(order);
                                     }}
                                     title={locale === "ar" ? "إشعار الزبون عبر واتساب" : "Notifier le client via WhatsApp"}
-                                    className="p-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-colors cursor-pointer"
+                                    className="p-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 transition-colors cursor-pointer"
                                   >
                                     <MessageCircle className="w-3 h-3 text-emerald-600" />
                                   </button>
@@ -970,7 +1018,7 @@ export function OrdersManagerClient({
                                   }}
                                   disabled={shippingLoadingId === order.id}
                                   title="Expédier avec Navex Delivery en 1-clic"
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#c8a870] hover:bg-[#d8b880] text-[#1a1a1a] transition-all cursor-pointer disabled:opacity-50"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-600 hover:bg-amber-700 text-white transition-all cursor-pointer disabled:opacity-50 shadow-2xs whitespace-nowrap"
                                 >
                                   {shippingLoadingId === order.id ? (
                                     <Loader2 className="w-2.5 h-2.5 animate-spin" />
@@ -987,7 +1035,7 @@ export function OrdersManagerClient({
                                   }}
                                   disabled={shippingLoadingId === order.id}
                                   title="Expédier avec Anderson Logistique en 1-clic"
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#ea580c] hover:bg-[#f97316] text-white transition-all cursor-pointer disabled:opacity-50"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-600 hover:bg-orange-700 text-white transition-all cursor-pointer disabled:opacity-50 shadow-2xs whitespace-nowrap"
                                 >
                                   {shippingLoadingId === order.id ? (
                                     <Loader2 className="w-2.5 h-2.5 animate-spin text-white" />
@@ -1001,25 +1049,25 @@ export function OrdersManagerClient({
                           )}
                         </td>
 
-                        {/* Open Button */}
-                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                        {/* 8. Open Button */}
+                        <td className="py-3 px-2.5 text-center whitespace-nowrap">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               toggleExpand(order.id);
                             }}
-                            className={`px-2.5 py-1 text-xs rounded-[3px] font-medium border transition-colors inline-flex items-center gap-1 ${
+                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold border transition-all inline-flex items-center gap-1 cursor-pointer shadow-2xs ${
                               isExpanded
-                                ? "bg-luxury-text text-white border-luxury-text"
-                                : "bg-white text-luxury-text border-luxury-border/40 hover:bg-luxury-secondary hover:border-luxury-accent"
+                                ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
+                                : "bg-white text-zinc-700 border-zinc-200/80 hover:bg-zinc-100 hover:text-zinc-900"
                             }`}
                           >
                             <span>{isExpanded ? (locale === "ar" ? "إغلاق" : "Fermer") : (locale === "ar" ? "عرض" : "Détails")}</span>
                             {isExpanded ? (
-                              <ChevronUp className="w-3.5 h-3.5" />
+                              <ChevronUp className="w-3 h-3" />
                             ) : (
-                              <ChevronDown className="w-3.5 h-3.5" />
+                              <ChevronDown className="w-3 h-3" />
                             )}
                           </button>
                         </td>
@@ -1027,14 +1075,14 @@ export function OrdersManagerClient({
 
                       {/* Expanded Row Content */}
                       {isExpanded && (
-                        <tr className="bg-luxury-secondary/15">
-                          <td colSpan={9} className="p-4 sm:p-6 border-b-2 border-luxury-border/40">
+                        <tr className="bg-zinc-50/70">
+                          <td colSpan={8} className="p-4 sm:p-6 border-b border-zinc-200/80">
                             <div className="space-y-6">
                               {/* 1. Interactive Lifecycle Timeline Stepper */}
-                              <div className="bg-white p-4 rounded-[4px] border border-luxury-border/30 shadow-xs">
-                                <div className="flex items-center justify-between mb-3 pb-2 border-b border-luxury-border/20">
-                                  <p className="text-[11px] uppercase tracking-wider text-luxury-text-muted font-bold flex items-center gap-1.5">
-                                    <Clock className="w-3.5 h-3.5 text-luxury-accent" />
+                              <div className="bg-white p-5 rounded-xl border border-zinc-200/80 shadow-xs">
+                                <div className="flex items-center justify-between mb-4 pb-3 border-b border-zinc-100">
+                                  <p className="text-xs uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-2">
+                                    <Clock className="w-4 h-4 text-amber-600" />
                                     <span>
                                       {locale === "ar"
                                         ? "مسار تقدم الطلبية (Lifecycle)"
@@ -1044,14 +1092,14 @@ export function OrdersManagerClient({
                                   <button
                                     type="button"
                                     onClick={() => handlePrintSlip(order)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-luxury-secondary hover:bg-luxury-secondary/80 text-luxury-text text-xs rounded-[3px] border border-luxury-border/40 transition-colors cursor-pointer"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-xs font-semibold rounded-lg border border-zinc-200/80 transition-colors cursor-pointer shadow-2xs"
                                   >
-                                    <Printer className="w-3.5 h-3.5 text-luxury-accent" />
+                                    <Printer className="w-3.5 h-3.5 text-amber-600" />
                                     <span>{locale === "ar" ? "طباعة وصل التسليم" : "Imprimer Bon de Livraison"}</span>
                                   </button>
                                 </div>
 
-                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                                   {LIFECYCLE_STEPS.map((step, idx) => {
                                     const stepNum = idx + 1;
                                     const currentStepIndex = config.stepIndex;
@@ -1061,24 +1109,30 @@ export function OrdersManagerClient({
                                     return (
                                       <div
                                         key={step.key}
-                                        className={`p-2.5 rounded-[3px] border text-center transition-all ${
+                                        className={`p-3 rounded-lg border text-center transition-all ${
                                           isCurrent
-                                            ? "bg-luxury-accent text-white border-luxury-accent shadow-xs font-semibold"
+                                            ? "bg-zinc-900 text-white border-zinc-900 shadow-xs font-semibold ring-2 ring-zinc-900/10"
                                             : isDone
-                                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                            : "bg-gray-50 text-gray-400 border-gray-200"
+                                            ? "bg-emerald-50 text-emerald-800 border-emerald-200/80 font-medium"
+                                            : "bg-zinc-50/80 text-zinc-400 border-zinc-200/60"
                                         }`}
                                       >
-                                        <div className="flex items-center justify-center gap-1 mb-1">
+                                        <div className="flex items-center justify-center gap-1 mb-1.5">
                                           {isDone ? (
-                                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                            <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center">
+                                              <Check className="w-3 h-3 text-emerald-700" />
+                                            </div>
                                           ) : isCurrent ? (
-                                            <Clock className="w-3.5 h-3.5 text-white" />
+                                            <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
+                                              <Clock className="w-3 h-3 text-white" />
+                                            </div>
                                           ) : (
-                                            <span className="w-3.5 h-3.5 inline-block text-[10px]">○</span>
+                                            <div className="w-5 h-5 rounded-full bg-zinc-200/60 flex items-center justify-center text-[10px] text-zinc-500 font-bold">
+                                              {stepNum}
+                                            </div>
                                           )}
                                         </div>
-                                        <p className="text-[11px] leading-tight">
+                                        <p className="text-xs leading-tight">
                                           {locale === "ar" ? step.labelAr : step.labelFr}
                                         </p>
                                       </div>
@@ -1090,33 +1144,35 @@ export function OrdersManagerClient({
                               {/* 2. 3-Column Detailed Information Cards */}
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 {/* CARD A: Destinataire & Livraison */}
-                                <div className="bg-white p-4 rounded-[4px] border border-luxury-border/30 space-y-3 shadow-xs">
-                                  <div className="flex items-center gap-2 pb-2 border-b border-luxury-border/20">
-                                    <User className="w-4 h-4 text-luxury-accent" />
-                                    <h4 className="font-semibold text-xs text-luxury-text uppercase tracking-wider">
+                                <div className="bg-white p-5 rounded-xl border border-zinc-200/80 space-y-4 shadow-xs">
+                                  <div className="flex items-center gap-2 pb-3 border-b border-zinc-100">
+                                    <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-700">
+                                      <User className="w-4 h-4" />
+                                    </div>
+                                    <h4 className="font-semibold text-xs text-zinc-900 uppercase tracking-wider">
                                       {locale === "ar" ? "معلومات الزبون والتوصيل" : "Destinataire & Adresse"}
                                     </h4>
                                   </div>
 
-                                  <div className="space-y-2 text-xs">
+                                  <div className="space-y-3 text-xs">
                                     <div>
-                                      <p className="text-[10px] text-luxury-text-muted uppercase">
+                                      <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
                                         {locale === "ar" ? "الاسم الكامل" : "Nom & Prénom"}
                                       </p>
-                                      <p className="font-bold text-luxury-text text-sm mt-0.5">
+                                      <p className="font-bold text-zinc-900 text-sm mt-0.5">
                                         {order.customer.name}
                                       </p>
                                     </div>
 
                                     <div>
-                                      <p className="text-[10px] text-luxury-text-muted uppercase">
+                                      <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
                                         {locale === "ar" ? "رقم الهاتف" : "Téléphone Principal"}
                                       </p>
-                                      <div className="flex items-center gap-2 mt-0.5">
+                                      <div className="flex items-center gap-2 mt-1">
                                         <a
                                           href={`tel:${order.customer.phone}`}
                                           dir="ltr"
-                                          className="font-mono font-bold text-luxury-accent text-sm hover:underline"
+                                          className="font-mono font-bold text-amber-700 hover:text-amber-800 text-sm hover:underline bg-amber-50/70 px-2 py-0.5 rounded-md border border-amber-200/50"
                                         >
                                           {order.customer.phone}
                                         </a>
@@ -1124,12 +1180,12 @@ export function OrdersManagerClient({
                                           type="button"
                                           onClick={() => handleCopy(order.customer.phone, `phone-${order.id}`)}
                                           title="Copier le numéro"
-                                          className="p-1 text-luxury-text-muted hover:text-luxury-text"
+                                          className="p-1 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
                                         >
                                           {copiedId === `phone-${order.id}` ? (
-                                            <Check className="w-3 h-3 text-emerald-600" />
+                                            <Check className="w-3.5 h-3.5 text-emerald-600" />
                                           ) : (
-                                            <Copy className="w-3 h-3" />
+                                            <Copy className="w-3.5 h-3.5" />
                                           )}
                                         </button>
                                       </div>
@@ -1137,40 +1193,40 @@ export function OrdersManagerClient({
 
                                     {order.customer.alternatePhone && (
                                       <div>
-                                        <p className="text-[10px] text-luxury-text-muted uppercase">
+                                        <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
                                           {locale === "ar" ? "رقم بديل" : "Téléphone Secondaire"}
                                         </p>
                                         <a
                                           href={`tel:${order.customer.alternatePhone}`}
                                           dir="ltr"
-                                          className="font-mono text-luxury-text font-medium text-xs hover:underline block mt-0.5"
+                                          className="font-mono text-zinc-700 font-medium text-xs hover:underline block mt-1"
                                         >
                                           {order.customer.alternatePhone}
                                         </a>
                                       </div>
                                     )}
 
-                                    <div className="pt-2 border-t border-luxury-border/20">
-                                      <p className="text-[10px] text-luxury-text-muted uppercase">
+                                    <div className="pt-3 border-t border-zinc-100">
+                                      <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
                                         {locale === "ar" ? "الولاية والبلدية" : "Localisation"}
                                       </p>
-                                      <p className="font-semibold text-luxury-text mt-0.5">
+                                      <p className="font-semibold text-zinc-900 mt-1">
                                         {getWilayaLabel(order.wilaya, locale)} — {order.commune}
                                       </p>
-                                      <p className="text-luxury-text-secondary mt-1 text-[11px] leading-relaxed bg-luxury-secondary/40 p-2 rounded-[3px]">
+                                      <p className="text-zinc-600 mt-1.5 text-xs leading-relaxed bg-zinc-50 border border-zinc-200/60 p-2.5 rounded-lg">
                                         {order.address}
                                       </p>
                                     </div>
 
                                     {order.callAttempts && order.callAttempts > 0 ? (
-                                      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-900 bg-amber-50/80 px-2.5 py-1.5 rounded-[3px] border border-amber-200">
+                                      <div className="mt-2 flex items-center gap-2 text-xs text-amber-900 bg-amber-50/90 px-3 py-2 rounded-lg border border-amber-200/80">
                                         <PhoneCall className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                                         <span>
                                           {locale === "ar"
                                             ? `محاولات الاتصال للتأكيد: ${order.callAttempts}/3 مسجلة`
                                             : `Tentatives d'appel : ${order.callAttempts}/3 effectuées`}
                                           {order.lastAttemptAt && (
-                                            <span className="text-luxury-text-muted font-mono ml-1">
+                                            <span className="text-zinc-500 font-mono ml-1">
                                               ({new Date(order.lastAttemptAt).toLocaleTimeString("fr-DZ", { hour: "2-digit", minute: "2-digit" })})
                                             </span>
                                           )}
@@ -1182,24 +1238,26 @@ export function OrdersManagerClient({
                                       const cleanUserNotes = order.notes.replace(/\[(ECOTRACK|TENTATIVE|ANNULATION):[^\]]+\]/gi, "").trim();
                                       if (!cleanUserNotes) return null;
                                       return (
-                                        <div className="mt-2 text-[11px] text-amber-900 bg-amber-50 p-2.5 rounded-[3px] border border-amber-200">
+                                        <div className="mt-2 text-xs text-amber-900 bg-amber-50/90 p-3 rounded-lg border border-amber-200/80">
                                           <span className="font-bold">💬 Note du client:</span> {cleanUserNotes}
                                         </div>
                                       );
                                     })()}
 
-                                    <div className="pt-2 border-t border-luxury-border/20 text-[11px]">
-                                      <span className="text-luxury-text-muted">Transporteur : </span>
-                                      <span className="font-semibold text-luxury-text">{order.deliveryService || "Yalitec Express"}</span>
+                                    <div className="pt-2.5 border-t border-zinc-100 text-xs flex items-center justify-between">
+                                      <span className="text-zinc-400">Transporteur : </span>
+                                      <span className="font-semibold text-zinc-800 bg-zinc-100 px-2 py-0.5 rounded-md">{order.deliveryService || "Yalitec Express"}</span>
                                     </div>
                                   </div>
                                 </div>
 
                                 {/* CARD B: Articles & Facturation */}
-                                <div className="bg-white p-4 rounded-[4px] border border-luxury-border/30 space-y-3 shadow-xs">
-                                  <div className="flex items-center gap-2 pb-2 border-b border-luxury-border/20">
-                                    <ShoppingBag className="w-4 h-4 text-luxury-accent" />
-                                    <h4 className="font-semibold text-xs text-luxury-text uppercase tracking-wider">
+                                <div className="bg-white p-5 rounded-xl border border-zinc-200/80 space-y-4 shadow-xs">
+                                  <div className="flex items-center gap-2 pb-3 border-b border-zinc-100">
+                                    <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-200/60 flex items-center justify-center text-indigo-700">
+                                      <ShoppingBag className="w-4 h-4" />
+                                    </div>
+                                    <h4 className="font-semibold text-xs text-zinc-900 uppercase tracking-wider">
                                       {locale === "ar" ? "المنتجات وتفاصيل الفاتورة" : "Articles & Facturation"}
                                     </h4>
                                   </div>
@@ -1209,23 +1267,25 @@ export function OrdersManagerClient({
                                     {order.items.map((item, idx) => (
                                       <div
                                         key={idx}
-                                        className="p-2 rounded-[3px] bg-luxury-secondary/30 flex items-start justify-between gap-2 text-xs"
+                                        className="p-3 rounded-lg bg-zinc-50 border border-zinc-200/60 flex items-start justify-between gap-3 text-xs"
                                       >
                                         <div>
-                                          <p className="font-bold text-luxury-text">
+                                          <p className="font-semibold text-zinc-900">
                                             {item.name}
                                           </p>
-                                          <p className="text-luxury-text-muted text-[11px] mt-0.5">
-                                            Volume: <span className="font-semibold text-luxury-text">{item.size}</span>
-                                            <span className="mx-1">•</span>
-                                            Qté: <span className="font-semibold text-luxury-text">×{item.qty}</span>
-                                          </p>
+                                          <div className="flex items-center gap-1.5 mt-1">
+                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white border border-zinc-200 text-zinc-700">
+                                              {item.size}
+                                            </span>
+                                            <span className="text-zinc-400">•</span>
+                                            <span className="text-zinc-600 font-medium">Qté: ×{item.qty}</span>
+                                          </div>
                                         </div>
                                         <div className="text-right">
-                                          <p className="font-bold text-luxury-text">
+                                          <p className="font-bold text-zinc-900">
                                             {formatPrice(item.unitPrice * item.qty, locale)}
                                           </p>
-                                          <p className="text-[10px] text-luxury-text-muted">
+                                          <p className="text-[10px] text-zinc-400">
                                             {formatPrice(item.unitPrice, locale)} / u
                                           </p>
                                         </div>
@@ -1234,53 +1294,55 @@ export function OrdersManagerClient({
                                   </div>
 
                                   {/* Pricing Breakdown */}
-                                  <div className="pt-2 border-t border-luxury-border/20 space-y-1.5 text-xs text-luxury-text-secondary">
+                                  <div className="pt-3 border-t border-zinc-100 space-y-2 text-xs text-zinc-600">
                                     <div className="flex justify-between">
                                       <span>{locale === "ar" ? "المجموع الفرعي" : "Sous-total articles"} :</span>
-                                      <span className="font-medium text-luxury-text">{formatPrice(order.subtotal, locale)}</span>
+                                      <span className="font-semibold text-zinc-900">{formatPrice(order.subtotal, locale)}</span>
                                     </div>
                                     <div className="flex justify-between">
                                       <span>{locale === "ar" ? "تكلفة التوصيل" : "Frais de livraison (Wilaya)"} :</span>
-                                      <span className="font-medium text-luxury-text">{formatPrice(order.deliveryFee, locale)}</span>
+                                      <span className="font-semibold text-zinc-900">{formatPrice(order.deliveryFee, locale)}</span>
                                     </div>
-                                    <div className="flex justify-between text-sm font-bold text-luxury-text border-t border-luxury-border/30 pt-2 mt-1">
+                                    <div className="flex justify-between items-center text-sm font-bold text-zinc-900 border-t border-zinc-200/80 pt-2.5 mt-1 bg-zinc-50 p-2.5 rounded-lg">
                                       <span>{locale === "ar" ? "المجموع المطلوب (COD)" : "Total Net à Encaisser"} :</span>
-                                      <span className="text-luxury-accent">{formatPrice(order.total, locale)}</span>
+                                      <span className="text-base text-amber-700 font-bold">{formatPrice(order.total, locale)}</span>
                                     </div>
                                   </div>
                                 </div>
 
                                 {/* CARD C: Actions & Traitement Opérationnel */}
-                                <div className="bg-white p-4 rounded-[4px] border border-luxury-border/30 space-y-3 shadow-xs flex flex-col justify-between">
+                                <div className="bg-white p-5 rounded-xl border border-zinc-200/80 space-y-4 shadow-xs flex flex-col justify-between">
                                   <div>
-                                    <div className="flex items-center gap-2 pb-2 border-b border-luxury-border/20">
-                                      <Package className="w-4 h-4 text-luxury-accent" />
-                                      <h4 className="font-semibold text-xs text-luxury-text uppercase tracking-wider">
+                                    <div className="flex items-center gap-2 pb-3 border-b border-zinc-100">
+                                      <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-700">
+                                        <Package className="w-4 h-4" />
+                                      </div>
+                                      <h4 className="font-semibold text-xs text-zinc-900 uppercase tracking-wider">
                                         {locale === "ar" ? "معالجة الحالة وتحديث الطلبية" : "Actions sur le Statut"}
                                       </h4>
                                     </div>
 
                                     <div className="space-y-3 pt-2 text-xs">
-                                      <div className="bg-luxury-secondary/30 p-2.5 rounded-[3px]">
-                                        <p className="text-[10px] uppercase tracking-wider text-luxury-text-muted font-semibold">
+                                      <div className="bg-zinc-50 border border-zinc-200/60 p-3 rounded-lg">
+                                        <p className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">
                                           {locale === "ar" ? "الحالة الحالية" : "Statut actuel de la commande"}
                                         </p>
-                                        <p className="text-sm font-bold text-luxury-text mt-0.5 flex items-center gap-1.5">
-                                          <StatusIcon className="w-4 h-4 text-luxury-accent" />
+                                        <p className="text-sm font-bold text-zinc-900 mt-1 flex items-center gap-2">
+                                          <StatusIcon className="w-4 h-4 text-amber-600" />
                                           <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
                                         </p>
                                       </div>
 
                                       {/* Action Buttons depending on status */}
                                       <div className="space-y-2">
-                                        <p className="text-[10px] uppercase tracking-wider text-luxury-text-muted font-semibold">
+                                        <p className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">
                                           {locale === "ar" ? "الانتقال إلى المرحلة التالية:" : "Passer à l'étape suivante :"}
                                         </p>
 
                                         {isUpdating ? (
-                                          <div className="flex items-center justify-center gap-2 p-3 bg-luxury-secondary rounded-[3px] text-luxury-text">
-                                            <Loader2 className="w-4 h-4 animate-spin text-luxury-accent" />
-                                            <span className="text-xs font-medium">
+                                          <div className="flex items-center justify-center gap-2 p-3 bg-zinc-100 rounded-lg text-zinc-700">
+                                            <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                                            <span className="text-xs font-semibold">
                                               {locale === "ar" ? "جاري التحديث في قاعدة البيانات..." : "Mise à jour en cours..."}
                                             </span>
                                           </div>
@@ -1289,10 +1351,10 @@ export function OrdersManagerClient({
                                             {order.status === "new" && (
                                               <>
                                                 {/* Tentatives d'appel (1, 2, 3) */}
-                                                <div className="p-2.5 rounded-[4px] bg-luxury-secondary/40 border border-luxury-border/40 space-y-2">
+                                                <div className="p-3 rounded-lg bg-amber-50/50 border border-amber-200/80 space-y-2.5">
                                                   <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-1.5 text-luxury-text font-semibold text-[11px]">
-                                                      <PhoneCall className="w-3.5 h-3.5 text-luxury-accent" />
+                                                    <div className="flex items-center gap-1.5 text-zinc-800 font-semibold text-xs">
+                                                      <PhoneCall className="w-3.5 h-3.5 text-amber-600" />
                                                       <span>
                                                         {locale === "ar"
                                                           ? "محاولات الاتصال للتأكيد :"
@@ -1301,7 +1363,7 @@ export function OrdersManagerClient({
                                                     </div>
                                                     {order.callAttempts && order.callAttempts > 0 ? (
                                                       <span
-                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                                           order.callAttempts === 3
                                                             ? "bg-red-100 text-red-800 border border-red-300"
                                                             : order.callAttempts === 2
@@ -1317,7 +1379,7 @@ export function OrdersManagerClient({
                                                           : "appel"}
                                                       </span>
                                                     ) : (
-                                                      <span className="text-[10px] text-luxury-text-muted">
+                                                      <span className="text-[10px] text-zinc-400 font-medium">
                                                         {locale === "ar" ? "لم يُتصل بعد" : "Non appelé"}
                                                       </span>
                                                     )}
@@ -1337,24 +1399,24 @@ export function OrdersManagerClient({
                                                           disabled={isThisPending || isUpdating}
                                                           onClick={() => handleToggleAttempt(order.id, num)}
                                                           title={locale === "ar" ? `تسجيل المحاولة ${num}` : `Enregistrer la tentative ${num}`}
-                                                          className={`py-1.5 px-1.5 rounded-[3px] text-[11px] font-semibold flex items-center justify-center gap-1 transition-all border cursor-pointer ${
+                                                          className={`py-1.5 px-1 sm:px-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all border cursor-pointer ${
                                                             isExact
                                                               ? num === 3
-                                                                ? "bg-red-600 text-white border-red-600 shadow-xs ring-1 ring-red-400"
+                                                                ? "bg-red-600 text-white border-red-600 shadow-xs ring-2 ring-red-300"
                                                                 : num === 2
-                                                                ? "bg-orange-500 text-white border-orange-500 shadow-xs ring-1 ring-orange-400"
-                                                                : "bg-amber-500 text-white border-amber-500 shadow-xs ring-1 ring-amber-400"
+                                                                ? "bg-orange-500 text-white border-orange-500 shadow-xs ring-2 ring-orange-300"
+                                                                : "bg-amber-500 text-white border-amber-500 shadow-xs ring-2 ring-amber-300"
                                                               : isReached
-                                                              ? "bg-amber-100/80 text-amber-900 border-amber-300 font-medium"
-                                                              : "bg-white text-luxury-text hover:bg-luxury-secondary/80 border-luxury-border/60 hover:border-luxury-accent/60"
+                                                              ? "bg-amber-100 text-amber-900 border-amber-300 font-medium"
+                                                              : "bg-white text-zinc-700 hover:bg-zinc-50 border-zinc-200 hover:border-zinc-300"
                                                           }`}
                                                         >
                                                           {isThisPending ? (
-                                                            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                                                            <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" />
                                                           ) : (
                                                             <Phone className="w-2.5 h-2.5 shrink-0" />
                                                           )}
-                                                          <span className="whitespace-nowrap">
+                                                          <span className="whitespace-nowrap tracking-tight">
                                                             {locale === "ar" ? `محاولة ${num}` : `Tentative ${num}`}
                                                           </span>
                                                         </button>
@@ -1363,12 +1425,12 @@ export function OrdersManagerClient({
                                                   </div>
 
                                                   {/* Timestamp + Reset Option */}
-                                                  <div className="flex items-center justify-between text-[10px] text-luxury-text-muted pt-0.5">
+                                                  <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-0.5">
                                                     <span>
                                                       {order.lastAttemptAt ? (
                                                         <>
                                                           {locale === "ar" ? "آخر محاولة: " : "Dernier appel: "}
-                                                          <span className="font-mono text-luxury-text font-semibold">
+                                                          <span className="font-mono text-zinc-900 font-semibold">
                                                             {new Date(order.lastAttemptAt).toLocaleTimeString(
                                                               locale === "ar" ? "ar-DZ" : "fr-DZ",
                                                               { hour: "2-digit", minute: "2-digit" }
@@ -1379,14 +1441,14 @@ export function OrdersManagerClient({
                                                         locale === "ar"
                                                           ? "اضغط لتسجيل محاولة الاتصال"
                                                           : "Cliquer pour noter un appel sans réponse"
-                                                     )}
+                                                      )}
                                                     </span>
 
                                                     {order.callAttempts && order.callAttempts > 0 ? (
                                                       <button
                                                         type="button"
                                                         onClick={() => handleToggleAttempt(order.id, 0)}
-                                                        className="text-luxury-text-muted hover:text-luxury-accent underline transition-colors"
+                                                        className="text-zinc-500 hover:text-amber-700 underline transition-colors cursor-pointer"
                                                       >
                                                         {locale === "ar" ? "إلغاء (0)" : "Effacer"}
                                                       </button>
@@ -1395,9 +1457,9 @@ export function OrdersManagerClient({
 
                                                   {/* Quick Cancel Button if 3 attempts reached */}
                                                   {order.callAttempts === 3 && (
-                                                    <div className="p-2 bg-red-50 border border-red-200 rounded-[3px] text-xs text-red-800 space-y-1.5 mt-1">
-                                                      <p className="font-semibold flex items-center gap-1 text-[11px] text-red-700">
-                                                        <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                                    <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 space-y-2 mt-1">
+                                                      <p className="font-semibold flex items-center gap-1.5 text-xs text-red-700">
+                                                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
                                                         <span>
                                                           {locale === "ar"
                                                             ? "3 محاولات اتصال دون رد (الزبون غير متاح)"
@@ -1422,9 +1484,9 @@ export function OrdersManagerClient({
                                                             );
                                                           }
                                                         }}
-                                                        className="w-full py-1.5 px-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-[3px] text-[11px] transition-colors flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
+                                                        className="w-full py-2 px-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                                                       >
-                                                        <XCircle className="w-3 h-3" />
+                                                        <XCircle className="w-3.5 h-3.5" />
                                                         <span>
                                                           {locale === "ar"
                                                             ? "إلغاء الطلبية (غير متاح بعد 3 محاولات)"
@@ -1439,9 +1501,9 @@ export function OrdersManagerClient({
                                                 <button
                                                   type="button"
                                                   onClick={() => handleStatusChange(order.id, "confirmed")}
-                                                  className="w-full py-2 px-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-[3px] text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                                                  className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                                                 >
-                                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                                  <CheckCircle2 className="w-4 h-4" />
                                                   <span>
                                                     {locale === "ar"
                                                       ? "✓ تأكيد الطلبية (اتصال هاتفي)"
@@ -1455,9 +1517,9 @@ export function OrdersManagerClient({
                                               <button
                                                 type="button"
                                                 onClick={() => handleStatusChange(order.id, "preparing")}
-                                                className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-[3px] text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                                                className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                                               >
-                                                <Package className="w-3.5 h-3.5" />
+                                                <Package className="w-4 h-4" />
                                                 <span>{locale === "ar" ? "🔧 إرسال للورشة (بدء التحضير)" : "🔧 Mettre en préparation à l'atelier"}</span>
                                               </button>
                                             )}
@@ -1466,9 +1528,9 @@ export function OrdersManagerClient({
                                               <button
                                                 type="button"
                                                 onClick={() => handleStatusChange(order.id, "shipped")}
-                                                className="w-full py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-[3px] text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                                                className="w-full py-2.5 px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                                               >
-                                                <Truck className="w-3.5 h-3.5" />
+                                                <Truck className="w-4 h-4" />
                                                 <span>{locale === "ar" ? "📦 تسليم لشركة الشحن (شحن)" : "📦 Remettre au livreur (Expédier)"}</span>
                                               </button>
                                             )}
@@ -1477,9 +1539,9 @@ export function OrdersManagerClient({
                                               <button
                                                 type="button"
                                                 onClick={() => handleStatusChange(order.id, "delivered", true)}
-                                                className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-[3px] text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                                                className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                                               >
-                                                <Check className="w-3.5 h-3.5" />
+                                                <Check className="w-4 h-4" />
                                                 <span>{locale === "ar" ? "✓ تأكيد التسليم والتحصيل Cash" : "✓ Marquer Livrée & Encaissée"}</span>
                                               </button>
                                             )}
@@ -1488,7 +1550,7 @@ export function OrdersManagerClient({
                                               <button
                                                 type="button"
                                                 onClick={() => handleStatusChange(order.id, "delivered", true)}
-                                                className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-[3px] text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                                                className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                                               >
                                                 <span>💰 Encaisser les fonds COD</span>
                                               </button>
@@ -1508,7 +1570,7 @@ export function OrdersManagerClient({
                                                     handleStatusChange(order.id, "cancelled", false);
                                                   }
                                                 }}
-                                                className="w-full py-1.5 px-3 bg-white hover:bg-red-50 text-red-600 border border-red-200 rounded-[3px] text-xs transition-colors"
+                                                className="w-full py-2 px-3 bg-white hover:bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                                               >
                                                 {locale === "ar" ? "✕ إلغاء الطلبية" : "✕ Annuler la commande"}
                                               </button>
@@ -1519,33 +1581,33 @@ export function OrdersManagerClient({
                                     </div>
                                   </div>
 
-                                  <div className="pt-3 border-t border-luxury-border/20 text-[10px] text-luxury-text-muted flex justify-between items-center font-mono">
+                                  <div className="pt-3 border-t border-zinc-100 text-[10px] text-zinc-400 flex justify-between items-center font-mono">
                                     <span>UUID: {order.id.slice(0, 13)}...</span>
-                                    <span>COD Algérie</span>
+                                    <span className="font-semibold text-zinc-600">COD Algérie</span>
                                   </div>
                                 </div>
                               </div>
 
                               {/* 3. Navex & Anderson Multi-Carrier Logistics & WhatsApp Hub */}
-                              <div className="bg-gradient-to-br from-[#171717] via-[#1f1d1b] to-[#141414] border border-[#c8a870]/40 rounded-[6px] p-4 sm:p-5 shadow-sm text-white">
+                              <div className="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 border border-zinc-800 rounded-xl p-5 shadow-lg text-zinc-100">
                                 {/* Header */}
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="w-8 h-8 rounded-[4px] bg-[#c8a870]/20 border border-[#c8a870]/40 flex items-center justify-center text-[#c8a870] shrink-0">
-                                      <Truck className="w-4 h-4" />
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                                      <Truck className="w-5 h-5" />
                                     </div>
                                     <div>
                                       <div className="flex items-center gap-2">
-                                        <h4 className="font-serif font-bold text-sm tracking-wide text-[#fdfbf7]">
+                                        <h4 className="font-bold text-sm tracking-wide text-white">
                                           {locale === "ar"
                                             ? "مركز الشحن والتوصيل (Navex & Anderson Logistique)"
                                             : "Centre d'Expédition Multi-Transporteurs (Navex & Anderson)"}
                                         </h4>
-                                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#c8a870]/20 text-[#e8c872] border border-[#c8a870]/30 font-mono">
+                                        <span className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-mono font-semibold">
                                           EcoTrack API
                                         </span>
                                       </div>
-                                      <p className="text-[11px] text-gray-400 mt-0.5">
+                                      <p className="text-[11px] text-zinc-400 mt-0.5">
                                         {locale === "ar"
                                           ? "توليد بوليصة الشحن (PDF)، التتبع الآلي وإشعار الزبون عبر واتساب بضغطة زر"
                                           : "Bordereau PDF officiel, génération du code de suivi et notification WhatsApp en 1-clic"}
@@ -1562,10 +1624,10 @@ export function OrdersManagerClient({
                                           order.deliveryService?.toLowerCase().includes("anderson");
                                         return (
                                           <span
-                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border ${
+                                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border ${
                                               isAnderson
-                                                ? "bg-orange-950/70 text-orange-300 border-orange-700/50"
-                                                : "bg-emerald-950/70 text-emerald-300 border-emerald-700/50"
+                                                ? "bg-orange-950/80 text-orange-300 border-orange-700/60"
+                                                : "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
                                             }`}
                                           >
                                             <CheckCircle className="w-3.5 h-3.5" />
@@ -1576,8 +1638,8 @@ export function OrdersManagerClient({
                                         );
                                       })()
                                     ) : (
-                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-white/5 text-gray-300 border border-white/10 text-xs">
-                                        <Clock className="w-3.5 h-3.5 text-[#c8a870]" />
+                                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800/80 text-zinc-300 border border-zinc-700 text-xs font-medium">
+                                        <Clock className="w-3.5 h-3.5 text-amber-400" />
                                         <span>{locale === "ar" ? "في انتظار الإرسال" : "Non transmis au transporteur"}</span>
                                       </span>
                                     )}
@@ -1587,24 +1649,24 @@ export function OrdersManagerClient({
                                 {/* Active Notification Banner if any */}
                                 {shippingMessage && shippingMessage.id === order.id && (
                                   <div
-                                    className={`mt-3 p-2.5 rounded-[4px] text-xs flex items-center justify-between ${
+                                    className={`mt-3 p-3 rounded-lg text-xs flex items-center justify-between ${
                                       shippingMessage.type === "success"
                                         ? "bg-emerald-950/80 text-emerald-200 border border-emerald-700/60"
-                                        : "bg-red-950/80 text-red-200 border border-red-700/60"
+                                        : "bg-rose-950/80 text-rose-200 border border-rose-700/60"
                                     }`}
                                   >
                                     <div className="flex items-center gap-2">
                                       {shippingMessage.type === "success" ? (
                                         <Check className="w-4 h-4 text-emerald-400 shrink-0" />
                                       ) : (
-                                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
                                       )}
-                                      <span>{shippingMessage.text}</span>
+                                      <span className="font-medium">{shippingMessage.text}</span>
                                     </div>
                                     <button
                                       type="button"
                                       onClick={() => setShippingMessage(null)}
-                                      className="text-gray-400 hover:text-white font-bold ml-2 cursor-pointer"
+                                      className="text-zinc-400 hover:text-white font-bold ml-2 cursor-pointer p-0.5"
                                     >
                                       ✕
                                     </button>
@@ -1615,14 +1677,14 @@ export function OrdersManagerClient({
                                 <div className="mt-4">
                                   {!order.trackingCode ? (
                                     /* State A: Ready to Dispatch */
-                                    <div className="bg-white/5 rounded-[4px] p-4 border border-white/10 space-y-4">
+                                    <div className="bg-zinc-900/60 rounded-xl p-4 border border-zinc-800 space-y-4">
                                       {/* Carrier Selection Switcher */}
-                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded bg-black/40 border border-white/10">
-                                        <div className="flex items-center gap-2.5">
-                                          <span className="text-xs font-semibold text-gray-200">
+                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-zinc-950/80 border border-zinc-800">
+                                        <div className="flex items-center gap-3">
+                                          <span className="text-xs font-semibold text-zinc-300">
                                             {locale === "ar" ? "شركة الشحن :" : "Transporteur :"}
                                           </span>
-                                          <div className="inline-flex rounded-[4px] p-0.5 bg-black/60 border border-white/15">
+                                          <div className="inline-flex rounded-lg p-1 bg-zinc-900 border border-zinc-800">
                                             <button
                                               type="button"
                                               onClick={() =>
@@ -1631,10 +1693,10 @@ export function OrdersManagerClient({
                                                   [order.id]: "navex",
                                                 }))
                                               }
-                                              className={`px-3 py-1 rounded-[3px] text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                                                 (selectedCarrierMap[order.id] || "navex") === "navex"
-                                                  ? "bg-[#c8a870] text-[#1a1a1a] shadow-xs"
-                                                  : "text-gray-400 hover:text-white"
+                                                  ? "bg-amber-600 text-white shadow-xs"
+                                                  : "text-zinc-400 hover:text-white"
                                               }`}
                                             >
                                               <Truck className="w-3.5 h-3.5" />
@@ -1648,10 +1710,10 @@ export function OrdersManagerClient({
                                                   [order.id]: "anderson",
                                                 }))
                                               }
-                                              className={`px-3 py-1 rounded-[3px] text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                                                 selectedCarrierMap[order.id] === "anderson"
-                                                  ? "bg-[#ea580c] text-white shadow-xs"
-                                                  : "text-gray-400 hover:text-white"
+                                                  ? "bg-orange-600 text-white shadow-xs"
+                                                  : "text-zinc-400 hover:text-white"
                                               }`}
                                             >
                                               <Package className="w-3.5 h-3.5" />
@@ -1660,7 +1722,7 @@ export function OrdersManagerClient({
                                           </div>
                                         </div>
 
-                                        <span className="text-[11px] text-gray-400 font-mono">
+                                        <span className="text-[11px] text-zinc-400 font-mono">
                                           {(selectedCarrierMap[order.id] || "navex") === "anderson"
                                             ? "anderson-ecommerce.ecotrack.dz"
                                             : "navexdelivery.ecotrack.dz"}
@@ -1668,27 +1730,27 @@ export function OrdersManagerClient({
                                       </div>
 
                                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                                        <div className="bg-black/30 p-2.5 rounded border border-white/5">
-                                          <span className="text-[10px] text-gray-400 uppercase tracking-wider block">
+                                        <div className="bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
+                                          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
                                             {locale === "ar" ? "المبلغ المستحق (COD)" : "Montant à Encaisser"}
                                           </span>
-                                          <span className="font-bold text-sm text-[#e8c872] mt-0.5 block">
+                                          <span className="font-bold text-sm text-amber-400 mt-1 block">
                                             {formatPrice(order.total, locale)}
                                           </span>
                                         </div>
-                                        <div className="bg-black/30 p-2.5 rounded border border-white/5">
-                                          <span className="text-[10px] text-gray-400 uppercase tracking-wider block">
+                                        <div className="bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
+                                          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
                                             {locale === "ar" ? "الولاية والبلدية" : "Destination"}
                                           </span>
-                                          <span className="font-semibold text-xs text-gray-200 mt-0.5 block truncate">
+                                          <span className="font-semibold text-xs text-zinc-200 mt-1 block truncate">
                                             {getWilayaLabel(order.wilaya, locale)} — {order.commune}
                                           </span>
                                         </div>
-                                        <div className="bg-black/30 p-2.5 rounded border border-white/5">
-                                          <span className="text-[10px] text-gray-400 uppercase tracking-wider block">
+                                        <div className="bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
+                                          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
                                             {locale === "ar" ? "طريقة التسليم" : "Mode de Livraison"}
                                           </span>
-                                          <label className="flex items-center gap-2 mt-1 cursor-pointer">
+                                          <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
                                             <input
                                               type="checkbox"
                                               checked={!!stopDeskMap[order.id]}
@@ -1698,9 +1760,9 @@ export function OrdersManagerClient({
                                                   [order.id]: e.target.checked,
                                                 }))
                                               }
-                                              className="rounded border-gray-600 text-[#c8a870] focus:ring-[#c8a870]"
+                                              className="rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-amber-500"
                                             />
-                                            <span className="text-xs text-gray-300">
+                                            <span className="text-xs text-zinc-300">
                                               {locale === "ar" ? "Stop Desk (المكتب)" : "Stop Desk (Bureau)"}
                                             </span>
                                           </label>
@@ -1708,7 +1770,7 @@ export function OrdersManagerClient({
                                       </div>
 
                                       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                                        <p className="text-[11px] text-gray-400">
+                                        <p className="text-[11px] text-zinc-400">
                                           {selectedCarrierMap[order.id] === "anderson"
                                             ? (locale === "ar"
                                                 ? "سيتم إرسال الطلبية لمنصة Anderson Logistique وتوليد البوليصة فوراً"
@@ -1721,10 +1783,10 @@ export function OrdersManagerClient({
                                           type="button"
                                           disabled={shippingLoadingId === order.id}
                                           onClick={() => handleSendToEcoTrack(order)}
-                                          className={`w-full sm:w-auto px-5 py-2.5 font-bold rounded-[3px] text-xs transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 ${
+                                          className={`w-full sm:w-auto px-5 py-2.5 font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 ${
                                             selectedCarrierMap[order.id] === "anderson"
-                                              ? "bg-gradient-to-r from-[#ea580c] to-[#c2410c] hover:from-[#f97316] hover:to-[#ea580c] text-white"
-                                              : "bg-gradient-to-r from-[#c8a870] to-[#b89358] hover:from-[#d8b880] hover:to-[#c8a870] text-[#1a1a1a]"
+                                              ? "bg-orange-600 hover:bg-orange-700 text-white"
+                                              : "bg-amber-600 hover:bg-amber-700 text-white"
                                           }`}
                                         >
                                           {shippingLoadingId === order.id ? (
@@ -1759,9 +1821,9 @@ export function OrdersManagerClient({
                                       return (
                                         <div className="space-y-4">
                                           {/* Tracking Details Banner */}
-                                          <div className="bg-black/40 rounded-[4px] p-3.5 border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                          <div className="bg-zinc-900/80 rounded-xl p-4 border border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
                                             <div className="space-y-1">
-                                              <span className="text-[10px] text-gray-400 uppercase tracking-wider block">
+                                              <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
                                                 {locale === "ar"
                                                   ? `رقم التتبع الرسمي (${carrierName})`
                                                   : `Numéro de Suivi Officiel (${carrierName})`}
@@ -1769,7 +1831,7 @@ export function OrdersManagerClient({
                                               <div className="flex items-center gap-2">
                                                 <span
                                                   className={`font-mono text-base font-bold tracking-wider ${
-                                                    isAnderson ? "text-[#fb923c]" : "text-[#e8c872]"
+                                                    isAnderson ? "text-orange-400" : "text-amber-400"
                                                   }`}
                                                 >
                                                   {order.trackingCode}
@@ -1777,7 +1839,7 @@ export function OrdersManagerClient({
                                                 <button
                                                   type="button"
                                                   onClick={() => handleCopy(order.trackingCode!, `track-${order.id}`)}
-                                                  className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                                                  className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
                                                   title="Copier le code de suivi"
                                                 >
                                                   {copiedId === `track-${order.id}` ? (
@@ -1790,7 +1852,7 @@ export function OrdersManagerClient({
                                                   href={portalUrl}
                                                   target="_blank"
                                                   rel="noopener noreferrer"
-                                                  className="text-[11px] text-gray-400 hover:text-white inline-flex items-center gap-0.5 ml-1 transition-colors"
+                                                  className="text-[11px] text-zinc-400 hover:text-white inline-flex items-center gap-1 ml-1 transition-colors font-medium underline"
                                                 >
                                                   <span>{locale === "ar" ? "بوابة التتبع" : "Portail Suivi"}</span>
                                                   <ExternalLink className="w-3 h-3" />
@@ -1800,14 +1862,14 @@ export function OrdersManagerClient({
 
                                             {/* Quick status info */}
                                             <div className="flex items-center gap-2">
-                                              <span className="text-xs text-gray-300">
+                                              <span className="text-xs text-zinc-400">
                                                 {locale === "ar" ? "الناقل والحالة :" : "Transporteur & Statut :"}
                                               </span>
                                               <span
-                                                className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                                                className={`px-3 py-1 rounded-full text-xs font-semibold border ${
                                                   isAnderson
-                                                    ? "bg-orange-950/60 text-orange-300 border-orange-800/40"
-                                                    : "bg-white/10 text-[#e8c872] border-white/15"
+                                                    ? "bg-orange-950/70 text-orange-300 border-orange-800/60"
+                                                    : "bg-zinc-800 text-amber-300 border-zinc-700"
                                                 }`}
                                               >
                                                 {carrierName} • {order.shippingStatus || (order.status === "delivered" ? "Livré" : "En cours")}
@@ -1816,75 +1878,75 @@ export function OrdersManagerClient({
                                           </div>
 
                                           {/* 4 Interactive Operations Buttons */}
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                                        {/* Button 1: Official PDF Shipping Label */}
-                                        {order.shippingLabelUrl ? (
-                                          <a
-                                            href={order.shippingLabelUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="p-2.5 rounded-[3px] bg-white/10 hover:bg-white/15 border border-white/20 text-white font-medium text-xs flex items-center justify-center gap-2 transition-all group"
-                                          >
-                                            <FileText className="w-4 h-4 text-[#e8c872] group-hover:scale-110 transition-transform" />
-                                            <span>{locale === "ar" ? `📄 بوليصة الشحن (${isAnderson ? "Anderson" : "Navex"})` : `📄 Bordereau ${isAnderson ? "Anderson" : "Navex"} (PDF)`}</span>
-                                          </a>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            onClick={() => handlePrintSlip(order)}
-                                            className="p-2.5 rounded-[3px] bg-white/10 hover:bg-white/15 border border-white/20 text-white font-medium text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-                                          >
-                                            <Printer className="w-4 h-4 text-[#e8c872]" />
-                                            <span>{locale === "ar" ? "طباعة الوصل" : "Imprimer le Bon"}</span>
-                                          </button>
-                                        )}
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                                            {/* Button 1: Official PDF Shipping Label */}
+                                            {order.shippingLabelUrl ? (
+                                              <a
+                                                href={order.shippingLabelUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="p-3 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-all group"
+                                              >
+                                                <FileText className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+                                                <span>{locale === "ar" ? `📄 بوليصة الشحن (${isAnderson ? "Anderson" : "Navex"})` : `📄 Bordereau ${isAnderson ? "Anderson" : "Navex"} (PDF)`}</span>
+                                              </a>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={() => handlePrintSlip(order)}
+                                                className="p-3 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                                              >
+                                                <Printer className="w-4 h-4 text-amber-400" />
+                                                <span>{locale === "ar" ? "طباعة الوصل" : "Imprimer le Bon"}</span>
+                                              </button>
+                                            )}
 
-                                        {/* Button 2: WhatsApp Buyer Notification */}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenWhatsApp(order)}
-                                          className="p-2.5 rounded-[3px] bg-[#25D366] hover:bg-[#20ba59] text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer group"
-                                        >
-                                          <MessageCircle className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                          <span>{locale === "ar" ? "💬 إشعار الزبون (WhatsApp)" : "💬 Notifier Client (WhatsApp)"}</span>
-                                        </button>
+                                            {/* Button 2: WhatsApp Buyer Notification */}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenWhatsApp(order)}
+                                              className="p-3 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer group"
+                                            >
+                                              <MessageCircle className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                              <span>{locale === "ar" ? "💬 إشعار الزبون (WhatsApp)" : "💬 Notifier Client (WhatsApp)"}</span>
+                                            </button>
 
-                                        {/* Button 3: Sync Status from Navex */}
-                                        <button
-                                          type="button"
-                                          disabled={shippingLoadingId === order.id}
-                                          onClick={() => handleSyncEcoTrack(order)}
-                                          className="p-2.5 rounded-[3px] bg-white/10 hover:bg-white/15 border border-white/20 text-white font-medium text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-                                        >
-                                          {shippingLoadingId === order.id ? (
-                                            <Loader2 className="w-4 h-4 animate-spin text-[#e8c872]" />
-                                          ) : (
-                                            <RefreshCw className="w-4 h-4 text-[#e8c872]" />
-                                          )}
-                                          <span>{locale === "ar" ? "🔄 تحديث التتبع المباشر" : "🔄 Actualiser le Suivi (Sync)"}</span>
-                                        </button>
+                                            {/* Button 3: Sync Status from Navex */}
+                                            <button
+                                              type="button"
+                                              disabled={shippingLoadingId === order.id}
+                                              onClick={() => handleSyncEcoTrack(order)}
+                                              className="p-3 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                                            >
+                                              {shippingLoadingId === order.id ? (
+                                                <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                                              ) : (
+                                                <RefreshCw className="w-4 h-4 text-amber-400" />
+                                              )}
+                                              <span>{locale === "ar" ? "🔄 تحديث التتبع المباشر" : "🔄 Actualiser le Suivi (Sync)"}</span>
+                                            </button>
 
-                                        {/* Button 4: Cancel Shipment */}
-                                        <button
-                                          type="button"
-                                          disabled={shippingLoadingId === order.id}
-                                          onClick={() => handleCancelEcoTrack(order)}
-                                          className="p-2.5 rounded-[3px] bg-red-950/40 hover:bg-red-900/50 border border-red-800/50 text-red-300 font-medium text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                          <span>{locale === "ar" ? "✕ إلغاء الطرد" : "✕ Annuler l'expédition"}</span>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })()
-                              )}
+                                            {/* Button 4: Cancel Shipment */}
+                                            <button
+                                              type="button"
+                                              disabled={shippingLoadingId === order.id}
+                                              onClick={() => handleCancelEcoTrack(order)}
+                                              className="p-3 rounded-lg bg-rose-950/50 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                              <span>{locale === "ar" ? "✕ إلغاء الطرد" : "✕ Annuler l'expédition"}</span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })()
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
+                          </td>
+                        </tr>
+                      )}
                     </React.Fragment>
                   );
                 })}
@@ -1892,18 +1954,79 @@ export function OrdersManagerClient({
             </table>
           </div>
 
-          {/* Table Footer */}
-          <div className="p-3 bg-luxury-secondary/30 border-t border-luxury-border/30 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-luxury-text-muted">
-            <p>
-              {locale === "ar"
-                ? `عرض ${filteredOrders.length} من إجمالي ${orders.length} طلبية`
-                : `Affichage de ${filteredOrders.length} sur ${orders.length} commande(s)`}
-            </p>
-            <p className="text-[11px] font-medium text-luxury-text-secondary">
-              {locale === "ar"
-                ? "انقر على أي سطر لعرض كامل التفاصيل والتحكم في حالة الطلب"
-                : "Cliquez sur une ligne pour afficher l'ensemble des détails et gérer le statut"}
-            </p>
+          {/* Table Footer with Pagination */}
+          <div className="px-5 py-3.5 bg-zinc-50/90 border-t border-zinc-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-600 font-medium">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span>
+                {locale === "ar"
+                  ? `عرض ${filteredOrders.length > 0 ? startIndex + 1 : 0} إلى ${endIndex} من إجمالي ${filteredOrders.length} طلبية`
+                  : `Affichage de ${filteredOrders.length > 0 ? startIndex + 1 : 0} à ${endIndex} sur ${filteredOrders.length} commande(s)`}
+              </span>
+              {filteredOrders.length !== orders.length && (
+                <span className="text-zinc-400 text-[11px]">
+                  ({locale === "ar" ? `مفلترة من ${orders.length}` : `filtré sur ${orders.length}`})
+                </span>
+              )}
+            </div>
+
+            {/* Pagination Controls (Displayed when more than 10 orders) */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5 select-none" dir="ltr">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  aria-label="Previous page"
+                  className="inline-flex items-center justify-center h-8 px-2.5 rounded-lg border border-zinc-200/90 bg-white hover:bg-zinc-100 text-zinc-700 disabled:opacity-40 disabled:hover:bg-white disabled:cursor-not-allowed text-xs font-semibold transition-all shadow-2xs gap-1 cursor-pointer"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{locale === "ar" ? "السابق" : "Précédent"}</span>
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {getPaginationRange(safePage, totalPages).map((p, idx) => {
+                    if (p === "...") {
+                      return (
+                        <span
+                          key={`ellipsis-${idx}`}
+                          className="w-7 h-8 flex items-center justify-center text-zinc-400 text-xs font-bold"
+                        >
+                          ...
+                        </span>
+                      );
+                    }
+                    const pageNum = p as number;
+                    const isActive = pageNum === safePage;
+                    return (
+                      <button
+                        key={`page-${pageNum}`}
+                        type="button"
+                        onClick={() => setCurrentPage(pageNum)}
+                        aria-current={isActive ? "page" : undefined}
+                        className={`min-w-8 h-8 px-2 flex items-center justify-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          isActive
+                            ? "bg-zinc-900 text-white shadow-xs border border-zinc-900"
+                            : "bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200/90 hover:text-zinc-900 shadow-2xs"
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  aria-label="Next page"
+                  className="inline-flex items-center justify-center h-8 px-2.5 rounded-lg border border-zinc-200/90 bg-white hover:bg-zinc-100 text-zinc-700 disabled:opacity-40 disabled:hover:bg-white disabled:cursor-not-allowed text-xs font-semibold transition-all shadow-2xs gap-1 cursor-pointer"
+                >
+                  <span className="hidden sm:inline">{locale === "ar" ? "التالي" : "Suivant"}</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

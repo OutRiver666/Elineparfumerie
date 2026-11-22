@@ -47,7 +47,7 @@ export default async function AdminDashboardLayout({
   const orderCounts = await getOrderCounts();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-luxury-secondary/40">
+    <div className="flex h-screen overflow-hidden bg-[#F8F9FB] font-outfit text-zinc-900 antialiased selection:bg-luxury-accent/20 selection:text-luxury-accent">
       <AdminSidebar
         locale={locale}
         ordersCount={orderCounts.total}

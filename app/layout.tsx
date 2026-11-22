@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Inter, Amiri } from "next/font/google";
+import { Playfair_Display, Inter, Amiri, Outfit } from "next/font/google";
 import "@/app/globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -12,6 +12,12 @@ const playfair = Playfair_Display({
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
+  display: "swap",
+});
+
+const outfit = Outfit({
+  subsets: ["latin"],
+  variable: "--font-outfit",
   display: "swap",
 });
 
@@ -45,7 +51,7 @@ export default function RootLayout({
 }) {
   return (
     <html
-      className={`${playfair.variable} ${inter.variable} ${amiri.variable}`}
+      className={`${playfair.variable} ${inter.variable} ${outfit.variable} ${amiri.variable}`}
       suppressHydrationWarning
     >
       <body

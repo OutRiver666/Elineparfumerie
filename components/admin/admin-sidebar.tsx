@@ -53,10 +53,10 @@ export function AdminSidebar({
     }[];
   }[] = [
     {
-      title: locale === "ar" ? "نظرة عامة" : "OVERVIEW",
+      title: locale === "ar" ? "نظرة عامة" : "Tableau de Bord",
       items: [
         {
-          label: locale === "ar" ? "لوحة المؤشرات" : "Tableau de Bord",
+          label: locale === "ar" ? "المؤشرات العامة" : "Vue Générale",
           href: `/${locale}/admin`,
           icon: LayoutDashboard,
           permissionKey: "overview",
@@ -64,10 +64,10 @@ export function AdminSidebar({
       ],
     },
     {
-      title: locale === "ar" ? "المبيعات" : "SALES",
+      title: locale === "ar" ? "المبيعات والطلبيات" : "Ventes & Logistique",
       items: [
         {
-          label: locale === "ar" ? "الطلبيات" : "Commandes",
+          label: locale === "ar" ? "الطلبيات" : "Commandes COD",
           href: `/${locale}/admin/orders`,
           icon: ShoppingBag,
           permissionKey: "orders_view",
@@ -84,7 +84,7 @@ export function AdminSidebar({
       ],
     },
     {
-      title: locale === "ar" ? "دليل المنتجات" : "CATALOG",
+      title: locale === "ar" ? "الكتالوج والعطور" : "Catalogue & Parfums",
       items: [
         {
           label: locale === "ar" ? "العطور والأسعار" : "Parfums & Tarifs",
@@ -101,7 +101,7 @@ export function AdminSidebar({
       ],
     },
     {
-      title: locale === "ar" ? "الباقات والعروض" : "PACKS",
+      title: locale === "ar" ? "الباقات والعروض" : "Offres & Packs",
       items: [
         {
           label: locale === "ar" ? "الباقات الجاهزة" : "Packs Prédéfinis",
@@ -118,16 +118,16 @@ export function AdminSidebar({
       ],
     },
     {
-      title: locale === "ar" ? "المخزون والورشة" : "INVENTORY & PRODUCTION",
+      title: locale === "ar" ? "المخزون والورشة" : "Atelier & Stocks",
       items: [
         {
-          label: locale === "ar" ? "الزيوت والكحول ومواد التعبئة" : "Matières & Packaging",
+          label: locale === "ar" ? "الزيوت والكحول والعبوات" : "Matières & Packaging",
           href: `/${locale}/admin/inventory`,
           icon: Boxes,
           permissionKey: "inventory_production",
         },
         {
-          label: locale === "ar" ? "التركيب ودفعات الإنتاج" : "Formulations & Batches",
+          label: locale === "ar" ? "التركيب ودفعات الإنتاج" : "Formulations & Lots",
           href: `/${locale}/admin/production`,
           icon: FlaskConical,
           permissionKey: "inventory_production",
@@ -135,10 +135,10 @@ export function AdminSidebar({
       ],
     },
     {
-      title: locale === "ar" ? "واجهة المتجر" : "VITRINE & CONTENU",
+      title: locale === "ar" ? "تخصيص المتجر" : "Vitrine & Médias",
       items: [
         {
-          label: locale === "ar" ? "تخصيص الواجهة والصور" : "Visuels & Bannières (Hero)",
+          label: locale === "ar" ? "صور الواجهة والبنرات" : "Visuels & Bannières Hero",
           href: `/${locale}/admin/ui-controller`,
           icon: SlidersHorizontal,
           permissionKey: "ui_controller",
@@ -146,7 +146,7 @@ export function AdminSidebar({
       ],
     },
     {
-      title: locale === "ar" ? "الإعدادات والفريق" : "SETTINGS & TEAM",
+      title: locale === "ar" ? "الإعدادات والفريق" : "Équipe & Système",
       items: [
         {
           label: locale === "ar" ? "فريق العمل والصلاحيات" : "Équipe & Rôles (RBAC)",
@@ -155,7 +155,7 @@ export function AdminSidebar({
           permissionKey: "settings_team",
         },
         {
-          label: locale === "ar" ? "تسعيرة الولايات والتهيئة" : "Livraison & Paramètres",
+          label: locale === "ar" ? "تسعيرة الولايات والشحن" : "Livraison & Paramètres",
           href: `/${locale}/admin/settings`,
           icon: Settings,
           permissionKey: "settings_team",
@@ -181,27 +181,32 @@ export function AdminSidebar({
     .filter((group) => group.items.length > 0);
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-white border-r border-luxury-border/30 h-screen sticky top-0 flex flex-col z-20 select-none">
-      {/* Brand Logo in Admin (Fixed at top) */}
-      <div className="h-16 flex-shrink-0 flex items-center px-6 border-b border-luxury-border/30 bg-white">
-        <Link href={`/${locale}`} className="group flex items-baseline space-x-2 rtl:space-x-reverse">
-          <span className="font-serif text-lg tracking-[0.18em] font-medium text-luxury-text uppercase">
-            Éline
-          </span>
-          <span className="text-[9px] uppercase tracking-widest text-luxury-accent font-semibold">
-            {locale === "ar" ? "الإدارة" : "Studio"}
-          </span>
+    <aside className="w-64 flex-shrink-0 bg-white border-r border-zinc-200/80 h-screen sticky top-0 flex flex-col z-20 select-none font-outfit">
+      {/* Brand Logo in Admin */}
+      <div className="h-16 flex-shrink-0 flex items-center px-5 border-b border-zinc-200/80 bg-white">
+        <Link href={`/${locale}`} className="group flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 text-amber-200 font-serif font-bold text-sm shadow-xs group-hover:bg-black transition-colors">
+            É
+          </div>
+          <div className="flex flex-col">
+            <span className="font-outfit text-sm font-bold tracking-tight text-zinc-900 group-hover:text-black">
+              Éline Parfumerie
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-amber-700 font-semibold">
+              {locale === "ar" ? "لوحة الإدارة المركزية" : "Studio Admin"}
+            </span>
+          </div>
         </Link>
       </div>
 
-      {/* Navigation Group list (Scrolls inside sidebar if needed) */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+      {/* Navigation Group list */}
+      <div className="flex-1 overflow-y-auto px-3 py-5 space-y-5">
         {navigationGroups.map((group) => (
           <div key={group.title} className="space-y-1">
-            <h5 className="px-3 text-[10px] uppercase tracking-wider text-luxury-text-muted font-semibold">
+            <h5 className="px-3 text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">
               {group.title}
             </h5>
-            <div className="space-y-0.5 pt-1">
+            <div className="space-y-0.5 pt-0.5">
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
@@ -210,32 +215,30 @@ export function AdminSidebar({
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "flex items-center justify-between px-3 py-2 rounded-[4px] text-xs font-medium transition-colors",
+                      "flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150",
                       isActive
-                        ? "bg-luxury-secondary text-luxury-text font-semibold"
-                        : "text-luxury-text-secondary hover:bg-luxury-secondary/60 hover:text-luxury-text"
+                        ? "bg-zinc-900 text-white font-semibold shadow-xs"
+                        : "text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100/70"
                     )}
                   >
-                    <div className="flex items-center space-x-2.5 rtl:space-x-reverse">
-                      <Icon className={cn("h-4 w-4", isActive ? "text-luxury-accent" : "text-luxury-text-muted")} />
+                    <div className="flex items-center gap-2.5">
+                      <Icon
+                        className={cn(
+                          "h-4 w-4 shrink-0 transition-colors",
+                          isActive ? "text-amber-300" : "text-zinc-400 group-hover:text-zinc-600"
+                        )}
+                      />
                       <span>{item.label}</span>
                     </div>
                     {item.badge && (
                       <span
-                        title={
-                          (item as any).newCount && (item as any).newCount > 0
-                            ? locale === "ar"
-                              ? `${(item as any).newCount} طلبية جديدة للتأكيد (من أصل ${item.badge})`
-                              : `${(item as any).newCount} nouvelle(s) commande(s) à traiter (sur ${item.badge} au total)`
-                            : locale === "ar"
-                            ? `${item.badge} طلبية إجمالية`
-                            : `${item.badge} commandes au total`
-                        }
                         className={cn(
-                          "px-2 py-0.5 rounded-full text-[10px] font-bold text-white transition-all shadow-xs",
+                          "px-2 py-0.5 rounded-full text-[10px] font-bold transition-all shadow-xs",
                           (item as any).isNewBadge
-                            ? "bg-amber-500 ring-2 ring-amber-300/40 animate-pulse"
-                            : "bg-luxury-accent"
+                            ? "bg-amber-500 text-white ring-2 ring-amber-400/30 animate-pulse"
+                            : isActive
+                            ? "bg-white/20 text-white"
+                            : "bg-zinc-100 text-zinc-700"
                         )}
                       >
                         {item.badge}
@@ -249,14 +252,17 @@ export function AdminSidebar({
         ))}
       </div>
 
-      {/* Storefront return link (Fixed at bottom) */}
-      <div className="p-4 border-t border-luxury-border/30 flex-shrink-0 bg-white">
+      {/* Storefront return link */}
+      <div className="p-3 border-t border-zinc-200/80 flex-shrink-0 bg-white">
         <Link
           href={`/${locale}`}
-          className="flex items-center justify-between px-3 py-2 text-xs text-luxury-text-secondary hover:text-luxury-text rounded-[4px] bg-luxury-secondary/50 hover:bg-luxury-secondary transition-colors"
+          className="flex items-center justify-between px-3 py-2 text-xs font-medium text-zinc-600 hover:text-zinc-950 rounded-lg bg-zinc-50 border border-zinc-200/60 hover:bg-zinc-100/80 transition-all"
         >
-          <span>{locale === "ar" ? "العودة إلى المتجر" : "Voir la boutique"}</span>
-          <ArrowUpRight className="h-3.5 w-3.5 opacity-70" />
+          <span className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            {locale === "ar" ? "زيارة المتجر المباشر" : "Voir la boutique"}
+          </span>
+          <ArrowUpRight className="h-3.5 w-3.5 text-zinc-400" />
         </Link>
       </div>
     </aside>
