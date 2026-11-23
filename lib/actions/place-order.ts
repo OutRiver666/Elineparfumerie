@@ -83,7 +83,7 @@ export async function placeOrder(
   try {
     const supabase = createAdminClient();
 
-    // Ensure the wilaya exists in wilaya_delivery_rates (FK requirement)
+    // Ensure the wilaya exists in wilaya_delivery_rates (FK requirement) WITHOUT overwriting saved admin rates
     const wilayaFromClient = ALGERIA_WILAYAS.find(
       (w) => w.code === payload.customer.wilayaCode
     );
@@ -97,7 +97,7 @@ export async function placeOrder(
           estimated_days: "24h - 48h",
           is_active: true,
         },
-        { onConflict: "wilaya_code" }
+        { onConflict: "wilaya_code", ignoreDuplicates: true }
       );
     }
 

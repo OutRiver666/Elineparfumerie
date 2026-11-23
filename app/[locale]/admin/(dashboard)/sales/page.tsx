@@ -146,7 +146,7 @@ export default async function AdminSalesPage({ params }: AdminSalesPageProps) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="rounded-xl border border-zinc-200/80 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-zinc-500">
@@ -229,8 +229,8 @@ export default async function AdminSalesPage({ params }: AdminSalesPageProps) {
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="p-5">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <CardContent className="p-4 sm:p-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
             {[
               {
                 labelFr: "Commandé",
@@ -348,20 +348,20 @@ export default async function AdminSalesPage({ params }: AdminSalesPageProps) {
                   const pct = Math.round((wilaya.orders / maxOrders) * 100);
                   return (
                     <div key={wilaya.code} className="p-4 text-xs hover:bg-zinc-50/60 transition-colors">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
                           <span className="w-6 h-6 rounded-lg bg-zinc-100 text-zinc-700 text-[11px] font-bold flex items-center justify-center shrink-0">
                             {i + 1}
                           </span>
-                          <span className="font-bold text-zinc-900">
+                          <span className="font-bold text-zinc-900 truncate">
                             {wilaya.code} — {isAr ? wilaya.nameAr : wilaya.name}
                           </span>
                         </div>
-                        <div className="text-right rtl:text-left">
+                        <div className="text-end shrink-0">
                           <span className="font-bold text-zinc-900">
                             {formatPrice(wilaya.revenue, locale)}
                           </span>
-                          <span className="ml-2 text-zinc-400">
+                          <span className="ms-2 text-zinc-400">
                             ({wilaya.orders} {isAr ? "طلب" : "cmd"})
                           </span>
                         </div>

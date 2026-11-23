@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Locale } from "@/lib/i18n";
 import { getProductBySlug, getProducts } from "@/lib/services/products.service";
+import { getWilayaRateMap } from "@/lib/services/settings.service";
 import { ProductDetailsClient } from "@/components/storefront/product-details-client";
 import { ProductCard } from "@/components/storefront/product-card";
 import { ArrowLeft } from "lucide-react";
@@ -16,7 +17,10 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
   const locale = (resolved.locale as Locale) || "fr";
   const slug = resolved.slug;
 
-  const product = await getProductBySlug(slug);
+  const [product, wilayaRateMap] = await Promise.all([
+    getProductBySlug(slug),
+    getWilayaRateMap(),
+  ]);
   if (!product) {
     notFound();
   }
@@ -36,7 +40,7 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
   if (effectiveMode === "landing_only") {
     return (
       <div className="w-full">
-        <ProductDetailsClient product={product} locale={locale} />
+        <ProductDetailsClient product={product} locale={locale} wilayaRateMap={wilayaRateMap} />
       </div>
     );
   }
@@ -45,7 +49,7 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
   if (effectiveMode === "both") {
     return (
       <div className="w-full">
-        <ProductDetailsClient product={product} locale={locale} />
+        <ProductDetailsClient product={product} locale={locale} wilayaRateMap={wilayaRateMap} />
 
         {relatedProducts.length > 0 && (
           <div className="container mx-auto px-4 sm:px-6 pb-16 pt-12">
@@ -86,7 +90,7 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
       </div>
 
       {/* Main Product Showcase Client Component */}
-      <ProductDetailsClient product={product} locale={locale} />
+      <ProductDetailsClient product={product} locale={locale} wilayaRateMap={wilayaRateMap} />
 
       {/* Related Products Recommendations */}
       <div className="pt-14 border-t border-luxury-border/30">

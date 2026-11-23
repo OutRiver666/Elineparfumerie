@@ -144,7 +144,7 @@ export default async function AdminDashboardPage({
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Link href={`/${locale}`} target="_blank">
             <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-zinc-200 text-zinc-700 hover:bg-zinc-100">
               <ExternalLink className="w-3.5 h-3.5 text-zinc-500" />
@@ -165,7 +165,7 @@ export default async function AdminDashboardPage({
 
       {/* 4 REVENUE STAT CARDS */}
       {authInfo.permissions.sales_analytics ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
           {revenueMetrics.map((metric) => (
             <StatCard
               key={metric.title}
@@ -180,7 +180,7 @@ export default async function AdminDashboardPage({
           ))}
         </div>
       ) : (
-        <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200/80 flex items-center justify-between text-xs text-zinc-600 shadow-xs">
+        <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-zinc-600 shadow-xs">
           <div className="flex items-center gap-2.5">
             <Lock className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
@@ -189,7 +189,7 @@ export default async function AdminDashboardPage({
                 : "Chiffre d'affaires & statistiques financières confidentielles masquées pour votre profil."}
             </span>
           </div>
-          <span className="text-[10px] uppercase font-bold text-amber-800 px-2 py-0.5 rounded-full bg-amber-100/70 border border-amber-200/60">
+          <span className="self-start sm:self-auto text-[10px] uppercase font-bold text-amber-800 px-2 py-0.5 rounded-full bg-amber-100/70 border border-amber-200/60 shrink-0">
             {isAr ? "وصول محمي" : "Accès Restreint"}
           </span>
         </div>
@@ -291,7 +291,7 @@ export default async function AdminDashboardPage({
 
       {/* RECENT ORDERS CARD (Modern Shadcn Card) */}
       <Card className="border-zinc-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02),0_6px_24px_rgba(0,0,0,0.03)]">
-        <CardHeader className="flex flex-row items-center justify-between p-5 pb-4 border-b border-zinc-100">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 pb-4 border-b border-zinc-100">
           <div>
             <CardTitle className="text-base font-bold text-zinc-900">
               {isAr ? "أحدث طلبيات الدفع عند الاستلام (COD)" : "Dernières Commandes COD Récentes"}
@@ -302,7 +302,7 @@ export default async function AdminDashboardPage({
                 : "Flux des commandes reçues avec état de validation et livraison."}
             </CardDescription>
           </div>
-          <Link href={`/${locale}/admin/orders`}>
+          <Link href={`/${locale}/admin/orders`} className="self-start sm:self-auto shrink-0">
             <Button variant="ghost" size="sm" className="gap-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 rounded-lg">
               <span>{isAr ? "فتح إدارة الطلبيات" : "Gérer les commandes"}</span>
               <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
@@ -324,8 +324,72 @@ export default async function AdminDashboardPage({
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left rtl:text-right">
+            <>
+              {/* Mobile Recent Orders Cards (< md) */}
+              <div className="md:hidden divide-y divide-zinc-100">
+                {recentOrders.map((order) => (
+                  <Link
+                    key={order.id}
+                    href={`/${locale}/admin/orders`}
+                    className="block p-4 space-y-2 hover:bg-zinc-50/70 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono font-bold text-xs text-zinc-900">
+                        {order.reference}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          order.status === "new"
+                            ? "bg-amber-50 text-amber-800 border border-amber-200/70"
+                            : order.status === "confirmed"
+                            ? "bg-emerald-50 text-emerald-800 border border-emerald-200/70"
+                            : order.status === "preparing"
+                            ? "bg-blue-50 text-blue-800 border border-blue-200/70"
+                            : order.status === "shipped"
+                            ? "bg-purple-50 text-purple-800 border border-purple-200/70"
+                            : order.status === "delivered"
+                            ? "bg-teal-50 text-teal-800 border border-teal-200/70"
+                            : "bg-rose-50 text-rose-800 border border-rose-200/70"
+                        }`}
+                      >
+                        {order.status === "new"
+                          ? isAr ? "جديدة" : "Nouvelle"
+                          : order.status === "confirmed"
+                          ? isAr ? "مؤكدة" : "Confirmée"
+                          : order.status === "preparing"
+                          ? isAr ? "تحضير" : "Préparation"
+                          : order.status === "shipped"
+                          ? isAr ? "شحن" : "Expédiée"
+                          : order.status === "delivered"
+                          ? isAr ? "تم التسليم" : "Livrée"
+                          : isAr ? "ملغاة" : "Annulée"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-zinc-900 truncate">{order.customer.name}</p>
+                        <p className="text-[11px] text-zinc-400 font-mono">{order.customer.phone}</p>
+                      </div>
+                      <span className="font-bold text-zinc-900 shrink-0">
+                        {formatPrice(order.total, locale)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-zinc-100 text-zinc-700 font-medium truncate">
+                        {order.wilaya}
+                        {order.commune ? ` • ${order.commune}` : ""}
+                      </span>
+                      <span className="truncate text-zinc-400">
+                        {order.items.map((i) => `${i.name}${i.size ? ` (${i.size})` : ""}`).join(", ")}
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+
+              {/* Desktop Table (md+) */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-xs text-left rtl:text-right">
                 <thead className="bg-zinc-50/80 text-zinc-400 uppercase tracking-wider text-[10px] font-bold border-b border-zinc-100">
                   <tr>
                     <th className="py-3 px-4">Réf</th>
@@ -435,7 +499,8 @@ export default async function AdminDashboardPage({
                   })}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

@@ -1,8 +1,11 @@
 import React from "react";
 import { Locale } from "@/lib/i18n";
 import { CheckoutForm } from "@/components/storefront/checkout-form";
+import { getWilayaRateMap } from "@/lib/services/settings.service";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
+
+export const dynamic = "force-dynamic";
 
 interface CheckoutPageProps {
   params: Promise<{ locale: string }>;
@@ -11,6 +14,7 @@ interface CheckoutPageProps {
 export default async function CheckoutPage({ params }: CheckoutPageProps) {
   const resolved = await params;
   const locale = (resolved.locale === "ar" ? "ar" : "fr") as Locale;
+  const wilayaRateMap = await getWilayaRateMap();
 
   return (
     <div className="container mx-auto px-4 sm:px-6 py-8 max-w-5xl">
@@ -21,7 +25,7 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
         <ChevronRight className={`w-4 h-4 ${locale === "ar" ? "" : "rotate-180"}`} />
         <span>{locale === "ar" ? "العودة إلى السلة" : "Retour au panier"}</span>
       </Link>
-      <CheckoutForm locale={locale} />
+      <CheckoutForm locale={locale} wilayaRateMap={wilayaRateMap} />
     </div>
   );
 }

@@ -170,7 +170,7 @@ export async function calculateServerOrderQuote(
     .eq("wilaya_code", payload.customer.wilayaCode)
     .single();
 
-  if (dbWilaya?.delivery_fee_dzd) {
+  if (dbWilaya && dbWilaya.delivery_fee_dzd !== null && dbWilaya.delivery_fee_dzd !== undefined) {
     deliveryFeeDZD = Number(dbWilaya.delivery_fee_dzd);
   } else {
     const matched = ALGERIA_WILAYAS.find((w) => w.code === payload.customer.wilayaCode);

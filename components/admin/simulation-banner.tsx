@@ -43,10 +43,10 @@ export function SimulationBanner({
       : "Rôle Personnalisé";
 
   return (
-    <div className="bg-amber-500 text-white px-4 py-2 text-xs flex items-center justify-between shadow-md z-30 select-none animate-fadeIn">
-      <div className="flex items-center gap-2">
-        <Sparkles className="w-4 h-4 shrink-0 animate-pulse" />
-        <span className="font-medium">
+    <div className="bg-amber-500 text-white px-3 sm:px-4 py-2 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-md z-30 select-none animate-fadeIn">
+      <div className="flex items-start sm:items-center gap-2">
+        <Sparkles className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0 animate-pulse" />
+        <span className="font-medium leading-snug">
           {isAr ? (
             <>
               وضع المعاينة مفعّل : أنت تتصفح لوحة التحكم حالياً بدور <strong>{roleName}</strong>.
@@ -62,14 +62,14 @@ export function SimulationBanner({
       <button
         onClick={handleExitSimulation}
         disabled={isPending}
-        className="px-3 py-1 rounded bg-black/25 hover:bg-black/40 text-white font-semibold transition-colors flex items-center gap-1.5 shrink-0"
+        className="self-start sm:self-auto px-3 py-1 rounded bg-black/25 hover:bg-black/40 text-white font-semibold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
       >
         {isPending ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
         ) : (
           <X className="w-3.5 h-3.5" />
         )}
-        <span>{isAr ? "إنهاء المعاينة والعودة لـ Super Admin" : "Quitter la simulation"}</span>
+        <span>{isAr ? "إنهاء المعاينة" : "Quitter la simulation"}</span>
       </button>
     </div>
   );

@@ -83,7 +83,117 @@ function parseUrlArray(value?: string): string[] {
   }
 }
 
-// ─── UPLOAD PRODUCT LANDING PAGE IMAGE ───────────────────────────────────────
+// ─── UPLOAD PRODUCT IMAGE (GALLERY OR LANDING PAGE) ─────────────────────────
+
+async function uploadToStorageOrLocal(
+  file: File,
+  folder: "products" | "landing-pages",
+  locale: string
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  if (!file.type.startsWith("image/")) {
+    return {
+      success: false,
+      error:
+        locale === "ar"
+          ? "صيغة الملف غير مدعومة. يرجى اختيار صورة (JPG, PNG, WEBP)."
+          : "Format invalide. Veuillez sélectionner une image (JPG, PNG, WEBP).",
+    };
+  }
+
+  if (file.size > 15 * 1024 * 1024) {
+    return {
+      success: false,
+      error:
+        locale === "ar"
+          ? "حجم الصورة يجب ألا يتجاوز 15 ميجابايت."
+          : "L'image ne doit pas dépasser 15 Mo.",
+    };
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const cleanExt = ["jpg", "jpeg", "png", "webp", "gif", "avif"].includes(ext) ? ext : "jpg";
+  const prefix = folder === "products" ? "product" : "landing";
+  const filename = `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${cleanExt}`;
+  const storagePath = `${folder}/${filename}`;
+
+  // 1. Upload to Supabase Storage "storefront" bucket (auto-create public bucket if missing)
+  try {
+    const admin = createAdminClient();
+    let { error: uploadError } = await admin.storage
+      .from("storefront")
+      .upload(storagePath, buffer, {
+        contentType: file.type,
+        upsert: true,
+      });
+
+    if (uploadError && /bucket|not found/i.test(uploadError.message || "")) {
+      await admin.storage.createBucket("storefront", {
+        public: true,
+        fileSizeLimit: 15 * 1024 * 1024,
+      });
+      const retry = await admin.storage
+        .from("storefront")
+        .upload(storagePath, buffer, {
+          contentType: file.type,
+          upsert: true,
+        });
+      uploadError = retry.error;
+    }
+
+    if (!uploadError) {
+      const { data: pubUrl } = admin.storage.from("storefront").getPublicUrl(storagePath);
+      if (pubUrl?.publicUrl) {
+        return { success: true, url: pubUrl.publicUrl };
+      }
+    } else {
+      console.warn(`[uploadProductImage:${folder}] Supabase storage error:`, uploadError.message);
+    }
+  } catch (storageErr) {
+    console.warn(`[uploadProductImage:${folder}] Supabase storage fallback to local:`, storageErr);
+  }
+
+  // 2. Fallback: Save to public/uploads/<folder>/
+  const uploadsDir = path.join(process.cwd(), "public", "uploads", folder);
+  if (!fs.existsSync(uploadsDir)) {
+    await fs.promises.mkdir(uploadsDir, { recursive: true });
+  }
+  const filePath = path.join(uploadsDir, filename);
+  await fs.promises.writeFile(filePath, buffer);
+
+  return { success: true, url: `/uploads/${folder}/${filename}` };
+}
+
+export async function uploadProductGalleryImageAction(
+  formData: FormData,
+  locale: string = "fr"
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  try {
+    await requireStaff(locale);
+
+    const file = formData.get("file") as File | null;
+    if (!file || typeof file === "string") {
+      return {
+        success: false,
+        error: locale === "ar" ? "لم يتم اختيار أي ملف." : "Aucun fichier sélectionné.",
+      };
+    }
+
+    return await uploadToStorageOrLocal(file, "products", locale);
+  } catch (error: any) {
+    console.error("[uploadProductGalleryImageAction] Error:", error);
+    return {
+      success: false,
+      error:
+        error?.message ||
+        (locale === "ar"
+          ? "حدث خطأ أثناء رفع الصورة."
+          : "Erreur lors du téléchargement de l'image."),
+    };
+  }
+}
 
 export async function uploadProductLandingImageAction(
   formData: FormData,
@@ -100,63 +210,7 @@ export async function uploadProductLandingImageAction(
       };
     }
 
-    if (!file.type.startsWith("image/")) {
-      return {
-        success: false,
-        error:
-          locale === "ar"
-            ? "صيغة الملف غير مدعومة. يرجى اختيار صورة (JPG, PNG, WEBP)."
-            : "Format invalide. Veuillez sélectionner une image (JPG, PNG, WEBP).",
-      };
-    }
-
-    if (file.size > 15 * 1024 * 1024) {
-      return {
-        success: false,
-        error:
-          locale === "ar"
-            ? "حجم الصورة يجب ألا يتجاوز 15 ميجابايت."
-            : "L'image ne doit pas dépasser 15 Mo.",
-      };
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-    const cleanExt = ["jpg", "jpeg", "png", "webp", "gif", "avif"].includes(ext) ? ext : "jpg";
-    const filename = `landing_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${cleanExt}`;
-    const storagePath = `landing-pages/${filename}`;
-
-    // 1. Upload to Supabase Storage "storefront" bucket
-    try {
-      const admin = createAdminClient();
-      const { error: uploadError } = await admin.storage
-        .from("storefront")
-        .upload(storagePath, buffer, {
-          contentType: file.type,
-          upsert: true,
-        });
-
-      if (!uploadError) {
-        const { data: pubUrl } = admin.storage.from("storefront").getPublicUrl(storagePath);
-        if (pubUrl?.publicUrl) {
-          return { success: true, url: pubUrl.publicUrl };
-        }
-      }
-    } catch (storageErr) {
-      console.warn("[uploadProductLandingImageAction] Supabase storage fallback to local:", storageErr);
-    }
-
-    // 2. Fallback: Save to public/uploads/landing-pages/
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", "landing-pages");
-    if (!fs.existsSync(uploadsDir)) {
-      await fs.promises.mkdir(uploadsDir, { recursive: true });
-    }
-    const filePath = path.join(uploadsDir, filename);
-    await fs.promises.writeFile(filePath, buffer);
-
-    return { success: true, url: `/uploads/landing-pages/${filename}` };
+    return await uploadToStorageOrLocal(file, "landing-pages", locale);
   } catch (error: any) {
     console.error("[uploadProductLandingImageAction] Error:", error);
     return {
@@ -315,6 +369,8 @@ export async function createProduct(
     return { error: "Erreur lors de la création des variantes." };
   }
 
+  revalidatePath("/fr");
+  revalidatePath("/ar");
   revalidatePath(`/fr/shop/${data.slug}`);
   revalidatePath(`/ar/shop/${data.slug}`);
   revalidatePath(`/fr/shop`);
@@ -459,6 +515,8 @@ export async function updateProduct(
     return { error: "Erreur lors de la mise à jour des variantes." };
   }
 
+  revalidatePath("/fr");
+  revalidatePath("/ar");
   revalidatePath(`/fr/shop/${data.slug}`);
   revalidatePath(`/ar/shop/${data.slug}`);
   revalidatePath(`/fr/shop`);
@@ -501,5 +559,93 @@ export async function getProductForEdit(productId: string) {
     return data as any;
   } catch {
     return null;
+  }
+}
+
+// ─── DELETE PRODUCT ──────────────────────────────────────────────────────────
+
+export async function deleteProduct(
+  productId: string,
+  locale: string = "fr"
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireStaff(locale);
+
+    if (!productId || typeof productId !== "string") {
+      return {
+        success: false,
+        error:
+          locale === "ar"
+            ? "معرّف العطر غير صالح."
+            : "Identifiant du parfum invalide.",
+      };
+    }
+
+    const admin = createAdminClient();
+
+    // Fetch slug first so we can revalidate its storefront routes
+    const { data: existing } = await (admin.from("products") as any)
+      .select("id, slug")
+      .eq("id", productId)
+      .maybeSingle();
+
+    if (!existing) {
+      return {
+        success: false,
+        error:
+          locale === "ar"
+            ? "هذا العطر غير موجود أو تم حذفه مسبقاً."
+            : "Ce parfum est introuvable ou a déjà été supprimé.",
+      };
+    }
+
+    const { error: deleteError } = await (admin.from("products") as any)
+      .delete()
+      .eq("id", productId);
+
+    if (deleteError) {
+      console.error("[deleteProduct] error:", deleteError);
+      if (deleteError.code === "23503") {
+        return {
+          success: false,
+          error:
+            locale === "ar"
+              ? "لا يمكن حذف هذا العطر لأنه مرتبط بدفعات إنتاج مسجلة. يرجى إزالة دفعات الإنتاج المرتبطة به أو إلغاء نشره بدلاً من ذلك."
+              : "Impossible de supprimer ce parfum car il est lié à des lots de production. Supprimez d'abord les lots associés ou dépubliez-le.",
+        };
+      }
+      return {
+        success: false,
+        error:
+          locale === "ar"
+            ? "حدث خطأ أثناء حذف العطر. يرجى المحاولة مرة أخرى."
+            : "Erreur lors de la suppression du parfum. Veuillez réessayer.",
+      };
+    }
+
+    revalidatePath("/fr");
+    revalidatePath("/ar");
+    revalidatePath("/fr/shop");
+    revalidatePath("/ar/shop");
+    revalidatePath("/fr/packs");
+    revalidatePath("/ar/packs");
+    revalidatePath("/fr/admin/products");
+    revalidatePath("/ar/admin/products");
+    if (existing.slug) {
+      revalidatePath(`/fr/shop/${existing.slug}`);
+      revalidatePath(`/ar/shop/${existing.slug}`);
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[deleteProduct] unexpected error:", error);
+    return {
+      success: false,
+      error:
+        error?.message ||
+        (locale === "ar"
+          ? "حدث خطأ غير متوقع أثناء الحذف."
+          : "Une erreur inattendue est survenue lors de la suppression."),
+    };
   }
 }

@@ -3,6 +3,8 @@ import { Locale, getDictionary } from "@/lib/i18n";
 import { getProducts } from "@/lib/services/products.service";
 import { ShopFilters } from "@/components/storefront/shop-filters";
 
+export const dynamic = "force-dynamic";
+
 interface ShopPageProps {
   params: Promise<{ locale: string }>;
   searchParams?: Promise<{ season?: string; gender?: string; family?: string }>;

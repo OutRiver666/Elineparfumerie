@@ -1,20 +1,25 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Globe, ShieldCheck } from "lucide-react";
+import { Globe, ShieldCheck, Search, X } from "lucide-react";
 import { CartIconBadge } from "@/components/storefront/cart-icon-badge";
+import { NavbarSearch, NavbarSearchProduct } from "@/components/storefront/navbar-search";
 import { Locale, getDictionary } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface NavbarProps {
   locale?: Locale;
+  products?: NavbarSearchProduct[];
 }
 
-export function Navbar({ locale = "fr" }: NavbarProps) {
+export function Navbar({ locale = "fr", products = [] }: NavbarProps) {
   const pathname = usePathname() || "";
   const dict = getDictionary(locale);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [desktopSearchOpen, setDesktopSearchOpen] = useState(false);
+  const isSearchActive = mobileSearchOpen || desktopSearchOpen;
 
   const nextLocale: Locale = locale === "fr" ? "ar" : "fr";
   const switchLangHref = pathname.startsWith(`/${locale}`)
@@ -35,7 +40,20 @@ export function Navbar({ locale = "fr" }: NavbarProps) {
   ];
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md transition-all duration-200 border-b border-luxury-border/30">
+    <>
+      {/* Full-page soft blur backdrop when search is open (desktop or mobile) */}
+      {isSearchActive && (
+        <div
+          aria-hidden="true"
+          onClick={() => {
+            setMobileSearchOpen(false);
+            setDesktopSearchOpen(false);
+          }}
+          className="fixed inset-0 z-30 bg-black/25 backdrop-blur-sm transition-opacity duration-200"
+        />
+      )}
+
+      <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md transition-all duration-200 border-b border-luxury-border/30">
       {/* Top Luxury Announcement Bar */}
       <div className="bg-luxury-secondary py-1.5 px-4 text-center text-[10.5px] sm:text-[11px] text-luxury-text-secondary tracking-wide border-b border-luxury-border/40">
         <div className="container mx-auto flex items-center justify-center space-x-2 rtl:space-x-reverse">
@@ -98,8 +116,36 @@ export function Navbar({ locale = "fr" }: NavbarProps) {
             </Link>
           </div>
 
-          {/* Right Action Icons: Language (Desktop), Cart */}
-          <div className="flex items-center space-x-4 rtl:space-x-reverse">
+          {/* Right Action Icons: Search, Language (Desktop), Cart */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Live Product Search Bar - Desktop */}
+            <NavbarSearch
+              locale={locale}
+              products={products}
+              variant="desktop"
+              onOpenChange={setDesktopSearchOpen}
+              forceClosed={!desktopSearchOpen}
+            />
+
+            {/* Mobile Search Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setMobileSearchOpen((prev) => !prev)}
+              aria-label={locale === "ar" ? "بحث عن عطر" : "Rechercher un parfum"}
+              className={cn(
+                "md:hidden inline-flex items-center justify-center h-9 w-9 rounded-full border transition-colors cursor-pointer",
+                mobileSearchOpen
+                  ? "bg-luxury-accent text-white border-luxury-accent"
+                  : "bg-luxury-secondary/50 text-luxury-text border-luxury-border/60 hover:bg-luxury-secondary"
+              )}
+            >
+              {mobileSearchOpen ? (
+                <X className="h-4 w-4" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+            </button>
+
             {/* Language Switcher - Desktop */}
             <Link
               href={switchLangHref}
@@ -114,6 +160,16 @@ export function Navbar({ locale = "fr" }: NavbarProps) {
             <CartIconBadge locale={locale} />
           </div>
         </div>
+
+        {/* Mobile Expandable Product Search Bar */}
+        {mobileSearchOpen && (
+          <NavbarSearch
+            locale={locale}
+            products={products}
+            variant="mobile-panel"
+            onCloseMobile={() => setMobileSearchOpen(false)}
+          />
+        )}
 
         {/* Mobile Sub-Navigation Bar: Under the logo in the same bar */}
         <div className="md:hidden border-t border-luxury-border/30 py-2 px-1">
@@ -153,5 +209,6 @@ export function Navbar({ locale = "fr" }: NavbarProps) {
         </div>
       </div>
     </header>
+    </>
   );
 }

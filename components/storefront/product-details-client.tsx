@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Perfume, PerfumeVariant, LandingPageMode } from "@/types/perfume";
+import type { WilayaRateMap } from "@/types/settings";
 import { Locale, getDictionary } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { SizePicker } from "./size-picker";
@@ -25,11 +26,13 @@ import {
 interface ProductDetailsClientProps {
   product: Perfume;
   locale?: Locale;
+  wilayaRateMap?: WilayaRateMap;
 }
 
 export function ProductDetailsClient({
   product,
   locale = "fr",
+  wilayaRateMap,
 }: ProductDetailsClientProps) {
   const dict = getDictionary(locale);
   const directCheckoutRef = useRef<HTMLDivElement>(null);
@@ -87,6 +90,7 @@ export function ProductDetailsClient({
               alt={`${name} — ${idx + 1}`}
               loading={idx === 0 ? "eager" : "lazy"}
               decoding="async"
+              referrerPolicy="no-referrer"
               className="block w-full h-auto max-w-full m-0 p-0 select-none"
             />
           ))}
@@ -101,14 +105,24 @@ export function ProductDetailsClient({
       {/* 1. PRODUCT GALLERY (LEFT) */}
       <div className="space-y-4">
         <div className="relative aspect-[4/5] w-full rounded-[6px] overflow-hidden bg-luxury-secondary shadow-luxury">
-          <Image
-            src={product.images[selectedImage] || product.images[0]}
+          <img
+            src={
+              product.images[selectedImage] ||
+              product.images[0] ||
+              product.landingPageImages?.[0] ||
+              "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&q=80&w=1000"
+            }
             alt={name}
-            fill
-            unoptimized
-            priority={effectiveMode === "standard"}
-            sizes="(max-width: 1024px) 100vw, 50vw"
-            className="object-cover object-center transition-all duration-300"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            onError={(e) => {
+              const fallback =
+                "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&q=80&w=1000";
+              if (e.currentTarget.src !== fallback) {
+                e.currentTarget.src = fallback;
+              }
+            }}
+            className="h-full w-full object-cover object-center transition-all duration-300"
           />
 
           {/* Classification & Best Seller Badges */}
@@ -395,6 +409,7 @@ export function ProductDetailsClient({
             onQuantityChange={setQuantity}
             onVariantChange={setSelectedVariant}
             locale={locale}
+            wilayaRateMap={wilayaRateMap}
           />
         </div>
 
@@ -437,6 +452,7 @@ export function ProductDetailsClient({
               onQuantityChange={setQuantity}
               onVariantChange={setSelectedVariant}
               locale={locale}
+              wilayaRateMap={wilayaRateMap}
             />
           </div>
         </div>
@@ -464,6 +480,7 @@ export function ProductDetailsClient({
           onQuantityChange={setQuantity}
           onVariantChange={setSelectedVariant}
           locale={locale}
+          wilayaRateMap={wilayaRateMap}
         />
       </div>
     </div>

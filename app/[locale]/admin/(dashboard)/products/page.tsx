@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getEffectiveAdminPermissions } from "@/lib/services/team.service";
 import { AccessDenied } from "@/components/admin/access-denied";
+import { DeleteProductButton } from "@/components/admin/delete-product-button";
 import { formatPrice } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,8 @@ import {
   CheckCircle2,
   Smartphone,
 } from "lucide-react";
+
+export const dynamic = "force-dynamic";
 
 interface AdminProductsPageProps {
   params: Promise<{ locale: string }>;
@@ -148,6 +151,7 @@ export default async function AdminProductsPage({
     );
   }
 
+  const canManageProducts = Boolean(authInfo.permissions.products_manage || authInfo.isOwner);
   const products = await getAllProductsForAdmin();
   const lowStockProducts = products.filter((p: AdminProduct) =>
     p.variants.some((v: AdminProductVariant) => v.stock < 10)
@@ -262,7 +266,125 @@ export default async function AdminProductsPage({
         </CardHeader>
 
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* Mobile Product Cards (< md) */}
+          <div className="md:hidden divide-y divide-zinc-100">
+            {products.map((product) => {
+              const totalStock = product.variants.reduce(
+                (acc: number, v: AdminProductVariant) => acc + v.stock,
+                0
+              );
+              const isLowStock = product.variants.some((v: AdminProductVariant) => v.stock < 10);
+              const minPrice =
+                product.variants.length > 0
+                  ? Math.min(...product.variants.map((v: AdminProductVariant) => v.priceDZD))
+                  : 0;
+              const maxPrice =
+                product.variants.length > 0
+                  ? Math.max(...product.variants.map((v: AdminProductVariant) => v.priceDZD))
+                  : 0;
+
+              return (
+                <div key={product.id} className="p-4 space-y-3 hover:bg-zinc-50/70 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-bold text-zinc-900 text-sm truncate">
+                        {isAr ? product.name.ar : product.name.fr}
+                      </p>
+                      <p className="text-[11px] text-zinc-400 font-mono truncate">
+                        /{product.slug} • {isAr ? product.family.ar : product.family.fr}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Link href={`/${locale}/shop/${product.slug}`} target="_blank">
+                        <button
+                          title={isAr ? "معاينة على المتجر" : "Aperçu en boutique"}
+                          className="p-2 rounded-lg bg-zinc-100/80 hover:bg-zinc-200/80 text-zinc-600 transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      </Link>
+                      <Link href={`/${locale}/admin/products/${product.id}/edit`}>
+                        <button
+                          title={isAr ? "تعديل المنتج" : "Modifier"}
+                          className="p-2 rounded-lg bg-zinc-900 text-white hover:bg-black transition-colors"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                      </Link>
+                      {canManageProducts && (
+                        <DeleteProductButton
+                          productId={product.id}
+                          productNameFr={product.name.fr}
+                          productNameAr={product.name.ar}
+                          productSlug={product.slug}
+                          variantsCount={product.variants.length}
+                          locale={locale}
+                          size="mobile"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Badges */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {product.isBestseller && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200/60 text-[9px] font-bold rounded-md">
+                        BESTSELLER
+                      </span>
+                    )}
+                    {product.classification && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 bg-zinc-100 text-zinc-700 text-[9px] font-bold rounded-md">
+                        {product.classification}
+                      </span>
+                    )}
+                    {product.landingPageMode === "landing_only" && product.landingImagesCount > 0 && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-violet-50 text-violet-700 border border-violet-200/70 text-[9px] font-bold rounded-md">
+                        <Smartphone className="w-2.5 h-2.5" />
+                        {isAr ? "صفحة هبوط" : "LANDING PAGE"}
+                      </span>
+                    )}
+                    {product.landingPageMode === "both" && product.landingImagesCount > 0 && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-200/70 text-[9px] font-bold rounded-md">
+                        <Layers className="w-2.5 h-2.5" />
+                        {isAr ? "هبوط + تفاصيل" : "LANDING + FICHE"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Sizes, Price & Stock */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-100 text-xs">
+                    <div className="flex flex-wrap gap-1">
+                      {product.variants.map((v: AdminProductVariant) => (
+                        <span
+                          key={v.id}
+                          className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${
+                            v.stock < 10
+                              ? "border-rose-200 bg-rose-50 text-rose-700"
+                              : "border-zinc-200/80 bg-zinc-50 text-zinc-700"
+                          }`}
+                        >
+                          {v.size}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="text-end">
+                      <p className="font-bold text-zinc-900">
+                        {formatPrice(minPrice, locale)}
+                        {minPrice !== maxPrice && ` — ${formatPrice(maxPrice, locale)}`}
+                      </p>
+                      <p className={`text-[10px] font-semibold ${isLowStock ? "text-rose-600" : "text-zinc-500"}`}>
+                        {totalStock} {isAr ? "وحدة" : "unités"}
+                        {isLowStock ? (isAr ? " • ⚠ منخفض" : " • ⚠ Faible") : ""}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop Table (md+) */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs text-left rtl:text-right">
               <thead className="bg-zinc-50/80 text-zinc-400 uppercase tracking-wider text-[10px] font-bold border-b border-zinc-100">
                 <tr>
@@ -404,6 +526,17 @@ export default async function AdminProductsPage({
                               <Edit className="w-3.5 h-3.5" />
                             </button>
                           </Link>
+                          {canManageProducts && (
+                            <DeleteProductButton
+                              productId={product.id}
+                              productNameFr={product.name.fr}
+                              productNameAr={product.name.ar}
+                              productSlug={product.slug}
+                              variantsCount={product.variants.length}
+                              locale={locale}
+                              size="desktop"
+                            />
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -24,7 +24,10 @@ import {
   Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { uploadProductLandingImageAction } from "@/lib/actions/products";
+import {
+  uploadProductGalleryImageAction,
+  uploadProductLandingImageAction,
+} from "@/lib/actions/products";
 import type { LandingPageMode } from "@/types/perfume";
 
 const PRESET_PLACEHOLDERS = [
@@ -149,6 +152,8 @@ export function ProductFormClient({
   const [images, setImages] = useState<string[]>(initialImages);
   const [newImageUrl, setNewImageUrl] = useState("");
   const [imageError, setImageError] = useState<string | null>(null);
+  const [isUploadingGallery, setIsUploadingGallery] = useState(false);
+  const galleryFileInputRef = useRef<HTMLInputElement>(null);
 
   // Landing Page Mode & Images state
   const initialLandingImages: string[] = (() => {
@@ -218,6 +223,53 @@ export function ProductFormClient({
 
   const handleRemoveImage = (indexToRemove: number) => {
     setImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleUploadGalleryFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setImageError(null);
+    setIsUploadingGallery(true);
+
+    const uploadedUrls: string[] = [];
+    const errors: string[] = [];
+
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        errors.push(`${file.name}: format non supporté`);
+        continue;
+      }
+      if (file.size > 15 * 1024 * 1024) {
+        errors.push(`${file.name}: > 15 Mo`);
+        continue;
+      }
+
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const res = await uploadProductGalleryImageAction(fd, locale);
+        if (res.success && res.url) {
+          uploadedUrls.push(res.url);
+        } else {
+          errors.push(res.error || file.name);
+        }
+      } catch (err: any) {
+        errors.push(err?.message || file.name);
+      }
+    }
+
+    if (uploadedUrls.length > 0) {
+      setImages((prev) => [...prev, ...uploadedUrls]);
+    }
+    if (errors.length > 0) {
+      setImageError(errors.join(" • "));
+    }
+
+    setIsUploadingGallery(false);
+    if (galleryFileInputRef.current) {
+      galleryFileInputRef.current.value = "";
+    }
   };
 
   const handleSetPrimaryImage = (indexToPromote: number) => {
@@ -420,7 +472,7 @@ export function ProductFormClient({
       )}
 
       {/* Back + Save */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => router.push(`/${locale}/admin/products`)}
@@ -665,46 +717,94 @@ export function ProductFormClient({
           </span>
         </div>
 
-        {/* Input Add Image by URL */}
-        <div className="space-y-2">
-          <label className={labelCls}>
-            {locale === "ar" ? "إضافة رابط صورة جديد (Image URL)" : "Ajouter une image par lien URL"}
-          </label>
-          <div className="flex flex-col sm:flex-row gap-2">
+        {/* Upload from Device + Add Image by URL */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Device Multi-File Upload */}
+          <div className="p-3.5 rounded-[4px] border border-dashed border-luxury-accent/50 bg-luxury-secondary/20 flex flex-col justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-luxury-text">
+              <UploadCloud className="w-4 h-4 text-luxury-accent shrink-0" />
+              <span>
+                {locale === "ar"
+                  ? "رفع صورة أو عدة صور من جهازك"
+                  : "Téléverser des photos depuis votre appareil"}
+              </span>
+            </div>
             <input
-              type="url"
-              className={`${inputCls} flex-1`}
-              value={newImageUrl}
-              onChange={(e) => {
-                setNewImageUrl(e.target.value);
-                if (imageError) setImageError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleAddImage();
-                }
-              }}
-              placeholder="https://images.unsplash.com/photo-1594035910387... ou https://.../parfum.jpg"
+              ref={galleryFileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleUploadGalleryFiles}
+              className="hidden"
             />
             <Button
               type="button"
-              onClick={() => handleAddImage()}
-              className="gap-1.5 shrink-0"
               size="sm"
+              variant="default"
+              disabled={isUploadingGallery}
+              onClick={() => galleryFileInputRef.current?.click()}
+              className="w-full gap-2"
             >
-              <Plus className="w-4 h-4" />
-              <span>{locale === "ar" ? "إضافة الصورة" : "Ajouter l'image"}</span>
+              {isUploadingGallery ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{locale === "ar" ? "جاري الرفع..." : "Téléchargement..."}</span>
+                </>
+              ) : (
+                <>
+                  <UploadCloud className="w-4 h-4" />
+                  <span>
+                    {locale === "ar"
+                      ? "اختيار صور العطر (JPG, PNG, WEBP)"
+                      : "Choisir des photos (JPG, PNG, WEBP)"}
+                  </span>
+                </>
+              )}
             </Button>
           </div>
 
-          {imageError && (
-            <p className="text-xs text-red-600 flex items-center gap-1.5 mt-1">
-              <AlertCircle className="w-3.5 h-3.5" />
-              <span>{imageError}</span>
-            </p>
-          )}
+          {/* Input Add Image by URL */}
+          <div className="p-3.5 rounded-[4px] border border-luxury-border/40 bg-luxury-secondary/10 flex flex-col justify-between gap-2">
+            <label className="text-xs font-medium text-luxury-text">
+              {locale === "ar" ? "أو إضافة رابط صورة (Image URL)" : "Ou ajouter une image par lien URL"}
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                className={`${inputCls} flex-1`}
+                value={newImageUrl}
+                onChange={(e) => {
+                  setNewImageUrl(e.target.value);
+                  if (imageError) setImageError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddImage();
+                  }
+                }}
+                placeholder="https://.../parfum.jpg"
+              />
+              <Button
+                type="button"
+                onClick={() => handleAddImage()}
+                className="gap-1 shrink-0"
+                size="sm"
+                variant="outline"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{locale === "ar" ? "إضافة" : "Ajouter"}</span>
+              </Button>
+            </div>
+          </div>
         </div>
+
+        {imageError && (
+          <p className="text-xs text-red-600 flex items-center gap-1.5 mt-1">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>{imageError}</span>
+          </p>
+        )}
 
         {/* Preset Placeholders (Quick 1-Click Fill) */}
         <div className="space-y-2 bg-luxury-secondary/30 p-3 rounded-[4px] border border-luxury-border/20">
@@ -821,6 +921,7 @@ export function ProductFormClient({
                       <img
                         src={imgUrl}
                         alt={`Image ${idx + 1}`}
+                        referrerPolicy="no-referrer"
                         className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300"
                         onError={(e) => {
                           const target = e.currentTarget;
@@ -1161,7 +1262,7 @@ export function ProductFormClient({
                 {landingImages.map((imgUrl, idx) => (
                   <div
                     key={`${imgUrl}-${idx}`}
-                    className="flex items-center gap-3 p-2.5 rounded-[4px] border border-luxury-border/40 bg-luxury-secondary/20"
+                    className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3 p-2.5 rounded-[4px] border border-luxury-border/40 bg-luxury-secondary/20"
                   >
                     <span className="w-7 h-7 rounded-[3px] bg-luxury-accent text-white text-xs font-bold flex items-center justify-center shrink-0">
                       {idx + 1}

@@ -24,15 +24,17 @@ import {
 } from "lucide-react";
 import { placeOrder } from "@/lib/actions/place-order";
 import { Locale } from "@/lib/i18n";
+import type { WilayaRateMap } from "@/types/settings";
 
 interface CheckoutFormProps {
   locale: Locale;
+  wilayaRateMap?: WilayaRateMap;
   onOrderSuccess?: (info: { orderId: string; totalDZD: number; items: CartItem[] }) => void;
 }
 
 type CheckoutStep = "form" | "confirming" | "success";
 
-export function CheckoutForm({ locale, onOrderSuccess }: CheckoutFormProps) {
+export function CheckoutForm({ locale, wilayaRateMap, onOrderSuccess }: CheckoutFormProps) {
   const { items, subtotalDZD, clearCart } = useCart();
   const [step, setStep] = useState<CheckoutStep>("form");
   const [orderId, setOrderId] = useState<string | null>(null);
@@ -59,8 +61,23 @@ export function CheckoutForm({ locale, onOrderSuccess }: CheckoutFormProps) {
     },
   });
 
+  const availableWilayas = React.useMemo(
+    () =>
+      ALGERIA_WILAYAS.map((w) => {
+        const override = wilayaRateMap?.[w.code];
+        return {
+          ...w,
+          deliveryFeeDZD:
+            override !== undefined ? override.deliveryFeeDZD : w.deliveryFeeDZD,
+          estimatedDays: override?.estimatedDays || "24h - 48h",
+          isActive: override !== undefined ? override.isActive : true,
+        };
+      }).filter((w) => w.isActive),
+    [wilayaRateMap]
+  );
+
   const selectedWilayaCode = watch("wilayaCode");
-  const selectedWilaya = ALGERIA_WILAYAS.find(
+  const selectedWilaya = availableWilayas.find(
     (w) => w.code === selectedWilayaCode
   );
 
@@ -69,7 +86,7 @@ export function CheckoutForm({ locale, onOrderSuccess }: CheckoutFormProps) {
     setValue("communeName", "");
   }, [selectedWilayaCode, setValue]);
 
-  const deliveryFee = selectedWilaya?.deliveryFeeDZD ?? 600;
+  const deliveryFee = selectedWilaya ? selectedWilaya.deliveryFeeDZD : 600;
   const totalDZD = subtotalDZD + deliveryFee;
 
   const onSubmit = (data: CheckoutFormValues) => {
@@ -312,7 +329,7 @@ export function CheckoutForm({ locale, onOrderSuccess }: CheckoutFormProps) {
                       ? "اختر ولايتك..."
                       : "Sélectionner la wilaya..."}
                   </option>
-                  {ALGERIA_WILAYAS.map((w) => (
+                  {availableWilayas.map((w) => (
                     <option key={w.code} value={w.code}>
                       {w.code} —{" "}
                       {locale === "ar" ? w.name_ar : w.name_fr}
@@ -328,9 +345,13 @@ export function CheckoutForm({ locale, onOrderSuccess }: CheckoutFormProps) {
               )}
               {selectedWilaya && (
                 <p className="text-[10px] text-luxury-accent mt-1 font-medium">
-                  {locale === "ar"
-                    ? `رسوم التوصيل: ${formatPrice(selectedWilaya.deliveryFeeDZD, locale)}`
-                    : `Livraison: ${formatPrice(selectedWilaya.deliveryFeeDZD, locale)}`}
+                  {selectedWilaya.deliveryFeeDZD === 0
+                    ? locale === "ar"
+                      ? `توصيل مجاني (${selectedWilaya.estimatedDays})`
+                      : `Livraison gratuite (${selectedWilaya.estimatedDays})`
+                    : locale === "ar"
+                    ? `رسوم التوصيل: ${formatPrice(selectedWilaya.deliveryFeeDZD, locale)} (${selectedWilaya.estimatedDays})`
+                    : `Livraison: ${formatPrice(selectedWilaya.deliveryFeeDZD, locale)} (${selectedWilaya.estimatedDays})`}
                 </p>
               )}
             </div>

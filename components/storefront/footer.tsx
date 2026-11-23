@@ -2,13 +2,16 @@ import React from "react";
 import Link from "next/link";
 import { Locale, getDictionary } from "@/lib/i18n";
 import { ShieldCheck, Truck, Sparkles, Heart } from "lucide-react";
+import { DEFAULT_STORE_SETTINGS, StoreSettings } from "@/types/settings";
 
 interface FooterProps {
   locale?: Locale;
+  settings?: StoreSettings;
 }
 
-export function Footer({ locale = "fr" }: FooterProps) {
+export function Footer({ locale = "fr", settings }: FooterProps) {
   const dict = getDictionary(locale);
+  const s = settings || DEFAULT_STORE_SETTINGS;
 
   return (
     <footer className="bg-luxury-secondary text-luxury-text mt-24 border-t border-luxury-border/30">
@@ -63,7 +66,7 @@ export function Footer({ locale = "fr" }: FooterProps) {
           {/* Brand info */}
           <div className="md:col-span-2 space-y-4">
             <span className="block font-serif text-2xl tracking-[0.2em] font-medium text-luxury-text uppercase">
-              Éline
+              {s.brandName}
             </span>
             <p className="text-xs text-luxury-text-secondary max-w-md leading-relaxed">
               {dict.footer.brandStatement}
@@ -100,9 +103,13 @@ export function Footer({ locale = "fr" }: FooterProps) {
               {dict.footer.customerCare}
             </h5>
             <ul className="space-y-2 text-xs text-luxury-text-secondary">
-              <li>{locale === "ar" ? "الهاتف: 0550 00 00 00" : "Service Client: 0550 00 00 00"}</li>
-              <li>contact@elineparfumerie.dz</li>
-              <li>{locale === "ar" ? "الجزائر العاصمة، الجزائر" : "Alger, Algérie"}</li>
+              <li>
+                {locale === "ar"
+                  ? `الهاتف: ${s.contactPhone}`
+                  : `Service Client: ${s.contactPhone}`}
+              </li>
+              <li>{s.supportEmail}</li>
+              <li>{locale === "ar" ? s.addressAr : s.addressFr}</li>
             </ul>
           </div>
         </div>

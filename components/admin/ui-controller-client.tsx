@@ -503,7 +503,7 @@ export function UiControllerClient({
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-16">
       {/* Top Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-luxury-border/40 p-6 rounded-[6px] shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-luxury-border/40 p-4 sm:p-6 rounded-[6px] shadow-xs">
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[3px] bg-luxury-secondary text-luxury-accent text-[11px] uppercase tracking-widest font-semibold mb-2">
             <SlidersHorizontal className="w-3.5 h-3.5" />

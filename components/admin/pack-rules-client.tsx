@@ -242,7 +242,7 @@ export function PackRulesClient({
           </p>
         </div>
 
-        <div className="flex items-center space-x-2.5 rtl:space-x-reverse">
+        <div className="flex flex-wrap items-center gap-2">
           <Link href={`/${locale}/admin/packs`}>
             <Button variant="outline" size="sm" className="text-xs">
               <Boxes className="w-3.5 h-3.5 mr-1.5 rtl:mr-0 rtl:ml-1.5 text-luxury-accent" />
@@ -327,7 +327,7 @@ export function PackRulesClient({
 
       {/* ─── Tiers List ───────────────────────────────────────────────────────── */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <h3 className="font-serif text-lg font-medium text-luxury-text">
             {locale === "ar"
               ? "مستويات التخفيض المعتمدة"
@@ -557,7 +557,7 @@ export function PackRulesClient({
             </div>
 
             {/* Bottles count and discount % */}
-            <div className="grid grid-cols-2 gap-3 p-3 rounded-[4px] bg-luxury-surface border border-luxury-border/40">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-[4px] bg-luxury-surface border border-luxury-border/40">
               <div>
                 <label className="text-[11px] uppercase tracking-wider text-luxury-text font-semibold block mb-1">
                   Nombre de Flacons Requis *

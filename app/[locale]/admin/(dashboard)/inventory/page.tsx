@@ -62,7 +62,7 @@ export default async function AdminInventoryPage({
       </div>
 
       {/* Summary Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="rounded-xl border border-zinc-200/80 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
           <div className="flex items-center justify-between mb-1.5 text-zinc-500 text-xs font-medium">
             <span>{isAr ? "مواد خام" : "Matières Premières"}</span>
@@ -179,7 +179,46 @@ export default async function AdminInventoryPage({
         </CardHeader>
 
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* Mobile Raw Materials Cards (< md) */}
+          <div className="md:hidden divide-y divide-zinc-100">
+            {rawMaterials.map((material) => (
+              <div
+                key={material.id}
+                className={`p-4 space-y-2 ${material.isLowStock ? "bg-rose-50/30" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-bold text-zinc-900 text-xs">
+                      {isAr ? material.nameAr : material.nameFr}
+                    </p>
+                    <p className="text-[10px] font-mono text-zinc-400 mt-0.5">{material.sku}</p>
+                  </div>
+                  {material.isLowStock ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-50 text-rose-700 text-[10px] font-bold rounded-full border border-rose-200 shrink-0">
+                      ⚠ {isAr ? "منخفض" : "Critique"}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-full border border-emerald-200 shrink-0">
+                      ✓ {isAr ? "كافٍ" : "Optimal"}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-zinc-100">
+                  <span className={`font-bold ${material.isLowStock ? "text-rose-600" : "text-zinc-900"}`}>
+                    {material.stockQuantity.toLocaleString()} {material.unit}
+                    <span className="text-[10px] font-normal text-zinc-400 ms-1.5">
+                      (min: {material.minThreshold.toLocaleString()})
+                    </span>
+                  </span>
+                  <span className="text-zinc-600 font-semibold text-[11px]">
+                    {formatPrice(material.costPerUnitDZD, locale)}/{material.unit}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs text-left rtl:text-right">
               <thead className="bg-zinc-50/80 text-zinc-400 uppercase tracking-wider text-[10px] font-bold border-b border-zinc-100">
                 <tr>
@@ -262,7 +301,46 @@ export default async function AdminInventoryPage({
         </CardHeader>
 
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* Mobile Packaging Cards (< md) */}
+          <div className="md:hidden divide-y divide-zinc-100">
+            {packagingMaterials.map((material) => (
+              <div
+                key={material.id}
+                className={`p-4 space-y-2 ${material.isLowStock ? "bg-rose-50/30" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-bold text-zinc-900 text-xs">
+                      {isAr ? material.nameAr : material.nameFr}
+                    </p>
+                    <p className="text-[10px] font-mono text-zinc-400 mt-0.5">
+                      {material.sku}
+                      {material.bottleSize ? ` • ${material.bottleSize}` : ""}
+                    </p>
+                  </div>
+                  {material.isLowStock ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-50 text-rose-700 text-[10px] font-bold rounded-full border border-rose-200 shrink-0">
+                      ⚠ {isAr ? "منخفض" : "Critique"}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-full border border-emerald-200 shrink-0">
+                      ✓ {isAr ? "كافٍ" : "Optimal"}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-zinc-100">
+                  <span className={`font-bold ${material.isLowStock ? "text-rose-600" : "text-zinc-900"}`}>
+                    {material.stockQuantity.toLocaleString()} pcs
+                  </span>
+                  <span className="text-zinc-600 font-semibold text-[11px]">
+                    {formatPrice(material.costPerUnitDZD, locale)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs text-left rtl:text-right">
               <thead className="bg-zinc-50/80 text-zinc-400 uppercase tracking-wider text-[10px] font-bold border-b border-zinc-100">
                 <tr>

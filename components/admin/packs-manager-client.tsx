@@ -437,7 +437,7 @@ export function PacksManagerClient({
           </p>
         </div>
 
-        <div className="flex items-center space-x-2.5 rtl:space-x-reverse">
+        <div className="flex flex-wrap items-center gap-2">
           <Link href={`/${locale}/admin/packs/rules`}>
             <Button variant="outline" size="sm" className="text-xs">
               <Sparkles className="w-3.5 h-3.5 mr-1.5 rtl:mr-0 rtl:ml-1.5 text-luxury-accent" />
@@ -457,7 +457,7 @@ export function PacksManagerClient({
       </div>
 
       {/* ─── Metric Stat Cards ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         <div className="bg-white p-5 rounded-[6px] border border-luxury-border/40 shadow-subtle flex items-center justify-between">
           <div>
             <p className="text-[11px] uppercase tracking-wider text-luxury-text-muted font-semibold">
@@ -532,9 +532,9 @@ export function PacksManagerClient({
           />
         </div>
 
-        <div className="flex items-center space-x-2 rtl:space-x-reverse w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end overflow-x-auto">
           {/* Status Filter */}
-          <div className="flex rounded-[4px] border border-luxury-border/40 p-0.5 bg-luxury-surface text-xs">
+          <div className="flex rounded-[4px] border border-luxury-border/40 p-0.5 bg-luxury-surface text-xs shrink-0">
             <button
               onClick={() => setStatusFilter("all")}
               className={`px-3 py-1 rounded-[3px] font-medium transition-colors ${
@@ -1152,8 +1152,8 @@ export function PacksManagerClient({
 
               {/* Items List Table */}
               {selectedItems.length > 0 && (
-                <div className="bg-white rounded-[4px] border border-luxury-border/30 overflow-hidden">
-                  <table className="w-full text-xs">
+                <div className="bg-white rounded-[4px] border border-luxury-border/30 overflow-x-auto">
+                  <table className="w-full min-w-[460px] text-xs">
                     <thead className="bg-luxury-surface text-luxury-text-muted text-[10px] uppercase tracking-wider">
                       <tr>
                         <th className="px-3 py-2 text-left rtl:text-right">Parfum</th>
@@ -1373,7 +1373,7 @@ export function PacksManagerClient({
                       <button
                         type="button"
                         onClick={() => setImages(images.filter((_, i) => i !== index))}
-                        className="absolute top-1 right-1 rtl:right-auto rtl:left-1 bg-black/70 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-1 right-1 rtl:right-auto rtl:left-1 bg-black/70 hover:bg-red-600 text-white p-1 rounded-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                         title="Supprimer la photo"
                       >
                         <X className="w-3 h-3" />

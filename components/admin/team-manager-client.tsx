@@ -339,7 +339,7 @@ export function TeamManagerClient({
 
         {/* Role Filters & Add Button */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 bg-luxury-secondary/40 p-1 rounded-[4px] text-xs">
+          <div className="flex items-center gap-1 bg-luxury-secondary/40 p-1 rounded-[4px] text-xs overflow-x-auto max-w-full">
             {[
               { id: "all", labelFr: "Tous", labelAr: "الكل" },
               { id: "owner", labelFr: "Direction", labelAr: "الإدارة" },
@@ -385,9 +385,191 @@ export function TeamManagerClient({
         </div>
       </div>
 
-      {/* Team Members List Table */}
+      {/* Team Members List (Mobile Cards + Desktop Table) */}
       <div className="bg-white rounded-[4px] border border-luxury-border/30 overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
+        {/* Mobile Team Member Cards (< md) */}
+        <div className="md:hidden divide-y divide-luxury-border/20">
+          {filteredMembers.length === 0 ? (
+            <div className="py-10 px-4 text-center text-luxury-text-muted text-sm font-medium">
+              {isAr ? "لا يوجد مسؤولون يطابقون هذا البحث." : "Aucun collaborateur trouvé pour cette sélection."}
+            </div>
+          ) : (
+            filteredMembers.map((member) => {
+              const isOwner = member.role === "owner";
+              const isSelf = member.email === currentAdminEmail;
+              const initials = member.fullName
+                .split(" ")
+                .map((w) => w[0])
+                .slice(0, 2)
+                .join("")
+                .toUpperCase();
+
+              return (
+                <div
+                  key={member.id}
+                  className={cn(
+                    "p-4 space-y-3 transition-colors",
+                    !member.isActive && "opacity-65 bg-gray-50/50"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className={cn(
+                          "w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs",
+                          isOwner
+                            ? "bg-amber-600 text-white"
+                            : member.role === "order_manager"
+                            ? "bg-blue-600 text-white"
+                            : member.role === "catalog_manager"
+                            ? "bg-emerald-600 text-white"
+                            : "bg-luxury-text text-white"
+                        )}
+                      >
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-xs text-luxury-text truncate">
+                            {member.fullName}
+                          </span>
+                          {isSelf && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold shrink-0">
+                              {isAr ? "أنت" : "Vous"}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-luxury-text-secondary truncate">{member.email}</p>
+                        {member.phone && (
+                          <p className="text-[10px] font-mono text-luxury-text-muted">{member.phone}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleToggleStatus(member)}
+                      disabled={isOwner || isSelf || isPending}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0",
+                        member.isActive
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : "bg-red-50 text-red-700 border border-red-200",
+                        (isOwner || isSelf) && "cursor-default opacity-80"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "w-1.5 h-1.5 rounded-full",
+                          member.isActive ? "bg-emerald-500" : "bg-red-500"
+                        )}
+                      />
+                      <span>
+                        {member.isActive
+                          ? isAr ? "مفعّل" : "Actif"
+                          : isAr ? "معطّل" : "Désactivé"}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-luxury-border/20">
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded-[4px] text-[10px] font-medium border",
+                        isOwner
+                          ? "bg-amber-50 text-amber-800 border-amber-300"
+                          : member.role === "order_manager"
+                          ? "bg-blue-50 text-blue-800 border-blue-200"
+                          : member.role === "catalog_manager"
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                          : member.role === "vitrine_manager"
+                          ? "bg-purple-50 text-purple-800 border-purple-200"
+                          : "bg-gray-100 text-gray-800 border-gray-300"
+                      )}
+                    >
+                      {isAr
+                        ? member.role === "owner"
+                          ? "المدير العام"
+                          : member.role === "order_manager"
+                          ? "مؤكد الطلبيات"
+                          : member.role === "catalog_manager"
+                          ? "مسير الكتالوج"
+                          : member.role === "vitrine_manager"
+                          ? "مسؤول الواجهة"
+                          : "صلاحيات مخصصة"
+                        : member.role === "owner"
+                        ? "Super Admin"
+                        : member.role === "order_manager"
+                        ? "Confirmateur"
+                        : member.role === "catalog_manager"
+                        ? "Catalogue & Stock"
+                        : member.role === "vitrine_manager"
+                        ? "Vitrine & Avis"
+                        : "Sur-Mesure"}
+                    </span>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleSimulateRole(member.id)}
+                        title={isAr ? "معاينة" : "Simuler"}
+                        className="p-2 rounded bg-luxury-secondary/40 text-luxury-text-secondary hover:text-luxury-text"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          const newP = prompt(
+                            isAr
+                              ? `أدخل كلمة المرور الجديدة لـ ${member.fullName} (6 أحرف على الأقل):`
+                              : `Nouveau mot de passe pour ${member.fullName} (min 6 caractères) :`,
+                            "Eline2026!"
+                          );
+                          if (newP && newP.length >= 6) {
+                            startTransition(async () => {
+                              const res = await resetAdminPasswordAction(member.id, newP, locale);
+                              if (res.success) {
+                                alert(
+                                  isAr
+                                    ? `تم تغيير كلمة المرور بنجاح إلى: ${newP}`
+                                    : `Mot de passe mis à jour avec succès : ${newP}`
+                                );
+                              } else {
+                                alert(res.error || "Erreur");
+                              }
+                            });
+                          }
+                        }}
+                        title={isAr ? "تغيير كلمة المرور" : "Mot de passe"}
+                        className="p-2 rounded bg-luxury-secondary/40 text-luxury-text-secondary hover:text-amber-600"
+                      >
+                        <Key className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleOpenEditModal(member)}
+                        title={isAr ? "تعديل الصلاحيات" : "Modifier"}
+                        className="p-2 rounded bg-luxury-secondary/40 text-luxury-text-secondary hover:text-luxury-accent"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      {!isOwner && (
+                        <button
+                          onClick={() => handleDeleteMember(member)}
+                          disabled={isPending}
+                          title={isAr ? "حذف" : "Supprimer"}
+                          className="p-2 rounded bg-red-50/70 text-red-600 hover:bg-red-100"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table (md+) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-start text-xs">
             <thead className="bg-luxury-secondary/40 border-b border-luxury-border/30 text-[10px] uppercase tracking-wider text-luxury-text-muted">
               <tr>
@@ -673,10 +855,10 @@ export function TeamManagerClient({
 
       {/* MODAL: ADD / EDIT ADMIN & PERMISSIONS */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
-          <div className="bg-white rounded-[6px] max-w-2xl w-full border border-luxury-border/50 shadow-xl overflow-hidden my-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-[6px] max-w-2xl w-full max-h-[90dvh] flex flex-col border border-luxury-border/50 shadow-xl overflow-hidden">
             {/* Modal Header */}
-            <div className="px-6 py-4 bg-luxury-secondary/40 border-b border-luxury-border/30 flex items-center justify-between">
+            <div className="px-4 sm:px-6 py-4 bg-luxury-secondary/40 border-b border-luxury-border/30 flex items-center justify-between gap-2 shrink-0">
               <div>
                 <h3 className="font-serif text-lg font-medium text-luxury-text">
                   {editingMember
@@ -702,7 +884,7 @@ export function TeamManagerClient({
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSubmitForm} className="p-6 space-y-6">
+            <form onSubmit={handleSubmitForm} className="p-4 sm:p-6 space-y-5 sm:space-y-6 overflow-y-auto">
               {formError && (
                 <div className="p-3 rounded-[4px] bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />

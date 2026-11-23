@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Perfume, PerfumeVariant } from "@/lib/data/mock-perfumes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,9 @@ import { Locale, getDictionary } from "@/lib/i18n";
 import { ShoppingBag, Eye, Check } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { toast } from "sonner";
+
+const FALLBACK_PERFUME_IMAGE =
+  "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&q=80&w=1000";
 
 interface ProductCardProps {
   product: Perfume;
@@ -28,6 +30,25 @@ export function ProductCard({ product, locale = "fr" }: ProductCardProps) {
   const [selectedVariant, setSelectedVariant] = useState<PerfumeVariant>(defaultVariant);
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   const [added, setAdded] = useState(false);
+
+  // Build ordered candidate image list with automatic fallback on broken links
+  const imageCandidates = useMemo(() => {
+    const raw = [
+      ...(Array.isArray(product.images) ? product.images : []),
+      ...(Array.isArray(product.landingPageImages) ? product.landingPageImages : []),
+      FALLBACK_PERFUME_IMAGE,
+    ];
+    return raw
+      .filter((src): src is string => typeof src === "string" && src.trim().length > 0)
+      .map((src) => src.trim());
+  }, [product.images, product.landingPageImages]);
+
+  const [imgIdx, setImgIdx] = useState(0);
+  useEffect(() => {
+    setImgIdx(0);
+  }, [imageCandidates[0]]);
+
+  const currentImgSrc = imageCandidates[imgIdx] || FALLBACK_PERFUME_IMAGE;
 
   const name = product.name[locale] || product.name.fr;
   const family = product.family[locale] || product.family.fr;
@@ -73,14 +94,18 @@ export function ProductCard({ product, locale = "fr" }: ProductCardProps) {
       {/* Product Image Area */}
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[4px] bg-luxury-secondary">
         <Link href={`/${locale}/shop/${product.slug}`} className="block h-full w-full">
-          <Image
-            src={product.images?.[0] || "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&q=80&w=1000"}
+          <img
+            src={currentImgSrc}
             alt={name}
-            fill
-            unoptimized
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
-            priority={false}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            onError={() => {
+              if (imgIdx < imageCandidates.length - 1) {
+                setImgIdx((prev) => prev + 1);
+              }
+            }}
+            className="h-full w-full object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
           />
         </Link>
 
@@ -182,13 +207,15 @@ export function ProductCard({ product, locale = "fr" }: ProductCardProps) {
         </div>
       </div>
 
-      {/* Quick View Modal */}
-      <QuickViewModal
-        product={product}
-        isOpen={quickViewOpen}
-        onClose={() => setQuickViewOpen(false)}
-        locale={locale}
-      />
+      {/* Quick View Modal — mounted lazily only when opened to avoid mobile lag */}
+      {quickViewOpen && (
+        <QuickViewModal
+          product={product}
+          isOpen={quickViewOpen}
+          onClose={() => setQuickViewOpen(false)}
+          locale={locale}
+        />
+      )}
     </div>
   );
 }

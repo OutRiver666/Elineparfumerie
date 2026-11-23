@@ -1,14 +1,11 @@
 import React from "react";
-import { AdminSidebar } from "@/components/admin/admin-sidebar";
-import { AdminHeader } from "@/components/admin/admin-header";
+import { AdminShell } from "@/components/admin/admin-shell";
 import { Locale } from "@/lib/i18n";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { getOrderCounts } from "@/lib/services/orders.service";
 import { getEffectiveAdminPermissions } from "@/lib/services/team.service";
-
-import { SimulationBanner } from "@/components/admin/simulation-banner";
 
 interface AdminDashboardLayoutProps {
   children: React.ReactNode;
@@ -47,29 +44,19 @@ export default async function AdminDashboardLayout({
   const orderCounts = await getOrderCounts();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F8F9FB] font-outfit text-zinc-900 antialiased selection:bg-luxury-accent/20 selection:text-luxury-accent">
-      <AdminSidebar
-        locale={locale}
-        ordersCount={orderCounts.total}
-        newOrdersCount={orderCounts.newOrders}
-        permissions={authInfo.permissions}
-        userRole={authInfo.role}
-      />
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        <AdminHeader
-          locale={locale}
-          userEmail={user.email}
-          userName={authInfo.member.fullName}
-          userRole={authInfo.role}
-          isSimulating={authInfo.isSimulating}
-          simulatedRole={simulatedRole}
-          isRealOwner={authInfo.isRealOwner}
-        />
-        {authInfo.isSimulating && (
-          <SimulationBanner locale={locale} simulatedRole={simulatedRole} />
-        )}
-        <main className="flex-1 p-6 sm:p-8 overflow-y-auto">{children}</main>
-      </div>
-    </div>
+    <AdminShell
+      locale={locale}
+      ordersCount={orderCounts.total}
+      newOrdersCount={orderCounts.newOrders}
+      permissions={authInfo.permissions}
+      userRole={authInfo.role}
+      userEmail={user.email}
+      userName={authInfo.member.fullName}
+      isSimulating={authInfo.isSimulating}
+      simulatedRole={simulatedRole}
+      isRealOwner={authInfo.isRealOwner}
+    >
+      {children}
+    </AdminShell>
   );
 }

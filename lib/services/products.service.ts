@@ -123,7 +123,7 @@ export async function getProducts(filters?: GetProductsFilters): Promise<Perfume
         stock: v.stock_quantity,
         sku: v.sku,
       })),
-      images: item.images || [],
+      images: parseImageArray(item.images),
       landingPageMode: parseLandingMode(item.landing_page_mode),
       landingPageImages: parseImageArray(item.landing_page_images),
       isFeatured: item.is_featured,

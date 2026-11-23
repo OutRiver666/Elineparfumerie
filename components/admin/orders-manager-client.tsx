@@ -1,11 +1,16 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useEffect, useRef } from "react";
 import { Locale } from "@/lib/i18n";
 import { AdminOrder } from "@/lib/services/orders.service";
 import { OrderStatus } from "@/types/database.types";
 import { getWilayaByCode } from "@/lib/data/algeria-locations";
-import { updateOrderStatusAction, updateOrderCallAttemptsAction } from "@/lib/actions/orders";
+import {
+  updateOrderStatusAction,
+  updateOrderCallAttemptsAction,
+  fetchLiveOrdersAction,
+} from "@/lib/actions/orders";
+import { createClient } from "@/lib/supabase/client";
 import {
   sendOrderToEcoTrackAction,
   syncEcoTrackStatusAction,
@@ -176,6 +181,103 @@ export function OrdersManagerClient({
     text: string;
   } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [recentlyArrivedIds, setRecentlyArrivedIds] = useState<Set<string>>(new Set());
+  const knownIdsRef = useRef<Set<string>>(new Set(initialOrders.map((o) => o.id)));
+
+  // Sync sidebar badge immediately whenever local orders list changes (status updated or new order arrived)
+  useEffect(() => {
+    const currentNewCount = orders.filter((o) => o.status === "new").length;
+    window.dispatchEvent(
+      new CustomEvent("eline:orders-count-sync", {
+        detail: { total: orders.length, newOrders: currentNewCount },
+      })
+    );
+  }, [orders]);
+
+  // Live Real-Time Sync for Orders Table (Supabase Realtime + 6s visible-tab fallback)
+  useEffect(() => {
+    let isMounted = true;
+    let isSyncing = false;
+
+    const syncLiveOrders = async () => {
+      if (isSyncing || document.visibilityState !== "visible") return;
+      isSyncing = true;
+      try {
+        const res = await fetchLiveOrdersAction();
+        if (!isMounted || !res.success || !res.orders) return;
+
+        const incoming = res.orders;
+        const brandNewIds = incoming
+          .filter((o) => !knownIdsRef.current.has(o.id))
+          .map((o) => o.id);
+
+        if (brandNewIds.length > 0) {
+          brandNewIds.forEach((id) => knownIdsRef.current.add(id));
+          setRecentlyArrivedIds((prev) => {
+            const next = new Set(prev);
+            brandNewIds.forEach((id) => next.add(id));
+            return next;
+          });
+          // Clear arrival highlight after 8 seconds
+          window.setTimeout(() => {
+            if (!isMounted) return;
+            setRecentlyArrivedIds((prev) => {
+              const next = new Set(prev);
+              brandNewIds.forEach((id) => next.delete(id));
+              return next;
+            });
+          }, 8000);
+        }
+
+        setOrders(incoming);
+      } catch {
+        // Ignore transient errors
+      } finally {
+        isSyncing = false;
+      }
+    };
+
+    let channel: ReturnType<ReturnType<typeof createClient>["channel"]> | null = null;
+    try {
+      const supabase = createClient();
+      channel = supabase
+        .channel("admin-orders-table-live")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "orders" },
+          () => {
+            syncLiveOrders();
+          }
+        )
+        .subscribe();
+    } catch {
+      // Fallback interval handles non-realtime setups
+    }
+
+    const intervalId = window.setInterval(syncLiveOrders, 6000);
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === "visible") {
+        syncLiveOrders();
+      }
+    };
+    window.addEventListener("focus", handleFocusOrVisible);
+    document.addEventListener("visibilitychange", handleFocusOrVisible);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("focus", handleFocusOrVisible);
+      document.removeEventListener("visibilitychange", handleFocusOrVisible);
+      window.clearInterval(intervalId);
+      if (channel) {
+        try {
+          const supabase = createClient();
+          supabase.removeChannel(channel);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    };
+  }, []);
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
@@ -754,333 +856,530 @@ export function OrdersManagerClient({
         </div>
       ) : (
         <div className="bg-white border border-zinc-200/80 rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.02),0_6px_24px_rgba(0,0,0,0.03)] overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left rtl:text-right border-collapse">
-              {/* Table Header */}
-              <thead>
-                <tr className="bg-zinc-50/80 border-b border-zinc-100 text-zinc-400 uppercase tracking-wider text-[10px] font-bold">
-                  <th className="py-2.5 px-2 w-9 text-center">#</th>
-                  <th className="py-2.5 px-3 min-w-[125px]">{locale === "ar" ? "الطلب / التاريخ" : "Commande"}</th>
-                  <th className="py-2.5 px-3 min-w-[145px]">{locale === "ar" ? "الزبون والهاتف" : "Client & Contact"}</th>
-                  <th className="py-2.5 px-3 min-w-[120px]">{locale === "ar" ? "الوجهة" : "Destination"}</th>
-                  <th className="py-2.5 px-2.5 text-center min-w-[70px]">{locale === "ar" ? "القطع" : "Articles"}</th>
-                  <th className="py-2.5 px-3 min-w-[105px]">{locale === "ar" ? "المبلغ COD" : "Total COD"}</th>
-                  <th className="py-2.5 px-3 min-w-[160px]">{locale === "ar" ? "الحالة والناقل" : "Statut & Suivi"}</th>
-                  <th className="py-2.5 px-2.5 text-center w-20">{locale === "ar" ? "تفاصيل" : "Détails"}</th>
-                </tr>
-              </thead>
+          {/* Desktop Table Header (lg+) */}
+          <div className="hidden lg:grid lg:grid-cols-[40px_135px_minmax(155px,1.2fr)_minmax(125px,1fr)_82px_115px_minmax(165px,1.1fr)_90px] items-center bg-zinc-50/80 border-b border-zinc-100 text-zinc-400 uppercase tracking-wider text-[10px] font-bold">
+            <div className="py-2.5 px-2 text-center">#</div>
+            <div className="py-2.5 px-3">{locale === "ar" ? "الطلب / التاريخ" : "Commande"}</div>
+            <div className="py-2.5 px-3">{locale === "ar" ? "الزبون والهاتف" : "Client & Contact"}</div>
+            <div className="py-2.5 px-3">{locale === "ar" ? "الوجهة" : "Destination"}</div>
+            <div className="py-2.5 px-2.5 text-center">{locale === "ar" ? "القطع" : "Articles"}</div>
+            <div className="py-2.5 px-3">{locale === "ar" ? "المبلغ COD" : "Total COD"}</div>
+            <div className="py-2.5 px-3">{locale === "ar" ? "الحالة والناقل" : "Statut & Suivi"}</div>
+            <div className="py-2.5 px-2.5 text-center">{locale === "ar" ? "تفاصيل" : "Détails"}</div>
+          </div>
 
-              {/* Table Body with Expandable Rows */}
-              <tbody className="divide-y divide-zinc-100 text-zinc-800">
-                {paginatedOrders.map((order, index) => {
-                  const isExpanded = expandedIds.has(order.id);
-                  const config = STATUS_CONFIG[order.status] || STATUS_CONFIG.new;
-                  const StatusIcon = config.icon;
-                  const isUpdating = updatingId === order.id;
+          {/* Responsive Orders List (Mobile Cards < lg, Desktop Grid Rows lg+) */}
+          <div className="divide-y divide-zinc-100 text-zinc-800 text-xs">
+            {paginatedOrders.map((order) => {
+              const isExpanded = expandedIds.has(order.id);
+              const config = STATUS_CONFIG[order.status] || STATUS_CONFIG.new;
+              const StatusIcon = config.icon;
+              const isUpdating = updatingId === order.id;
 
-                  const totalItemsCount = order.items.reduce(
-                    (sum, it) => sum + (it.qty || 1),
-                    0
-                  );
+              const totalItemsCount = order.items.reduce(
+                (sum, it) => sum + (it.qty || 1),
+                0
+              );
 
-                  const initials = order.customer.name
-                    ? order.customer.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .slice(0, 2)
-                        .join("")
-                        .toUpperCase()
-                    : "CL";
+              const initials = order.customer.name
+                ? order.customer.name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase()
+                : "CL";
 
-                  return (
-                    <React.Fragment key={order.id}>
-                      {/* Summary Row (Clickable) */}
-                      <tr
-                        onClick={() => toggleExpand(order.id)}
-                        className={`transition-colors cursor-pointer select-none ${
-                          isExpanded
-                            ? "bg-amber-50/25 border-l-4 border-l-amber-500"
-                            : "hover:bg-zinc-50/70"
-                        }`}
-                      >
-                        {/* 1. Expand Chevron */}
-                        <td className="py-3 px-2 text-center text-zinc-400 w-9">
+              const isAndersonRow =
+                order.shippingCarrier === "anderson" ||
+                order.deliveryService?.toLowerCase().includes("anderson");
+              const carrierLabelRow = isAndersonRow ? "Anderson" : "Navex";
+
+              const isNewlyArrived = recentlyArrivedIds.has(order.id);
+
+              return (
+                <div
+                  key={order.id}
+                  className={`${
+                    isExpanded
+                      ? "border-s-4 border-s-amber-500"
+                      : isNewlyArrived
+                      ? "border-s-4 border-s-emerald-500 bg-emerald-50/40"
+                      : ""
+                  } transition-colors duration-500`}
+                >
+                  {/* ── MOBILE & TABLET CARD VIEW (< lg) ── */}
+                  <div
+                    onClick={() => toggleExpand(order.id)}
+                    className={`lg:hidden p-3.5 sm:p-4 space-y-3 transition-colors cursor-pointer select-none ${
+                      isExpanded ? "bg-amber-50/25" : "hover:bg-zinc-50/70"
+                    }`}
+                  >
+                    {/* Top Row: Reference + Date + Status */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 font-mono font-bold text-zinc-900 text-xs">
+                          <span className="truncate">{order.reference || order.id.slice(0, 8)}</span>
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              toggleExpand(order.id);
+                              handleCopy(order.reference || order.id, order.id);
                             }}
-                            className="p-1 rounded-md hover:bg-zinc-100 text-zinc-400 hover:text-zinc-900 transition-colors cursor-pointer"
+                            title="Copier la référence"
+                            className="p-0.5 text-zinc-400 hover:text-zinc-900 cursor-pointer shrink-0"
                           >
-                            {isExpanded ? (
-                              <ChevronUp className="w-4 h-4 text-amber-600" />
+                            {copiedId === order.id ? (
+                              <Check className="w-3 h-3 text-emerald-600" />
                             ) : (
-                              <ChevronDown className="w-4 h-4" />
+                              <Copy className="w-3 h-3" />
                             )}
                           </button>
-                        </td>
+                        </div>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                          {new Date(order.createdAt).toLocaleDateString(
+                            locale === "ar" ? "ar-DZ" : "fr-DZ",
+                            { day: "2-digit", month: "short" }
+                          )}{" "}
+                          <span className="font-mono text-[10px]">
+                            {new Date(order.createdAt).toLocaleTimeString(
+                              locale === "ar" ? "ar-DZ" : "fr-DZ",
+                              { hour: "2-digit", minute: "2-digit" }
+                            )}
+                          </span>
+                        </p>
+                      </div>
 
-                        {/* 2. Order Reference & Date */}
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-1 font-mono font-bold text-zinc-900 text-xs whitespace-nowrap">
-                            <span>{order.reference || order.id.slice(0, 8)}</span>
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${config.className}`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-current shrink-0" />
+                          <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
+                        </span>
+                        {order.status === "new" && order.callAttempts && order.callAttempts > 0 ? (
+                          <span
+                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold border whitespace-nowrap ${
+                              order.callAttempts === 3
+                                ? "bg-rose-50 text-rose-700 border-rose-300 animate-pulse"
+                                : "bg-amber-50 text-amber-800 border-amber-300"
+                            }`}
+                          >
+                            <PhoneCall className="w-2.5 h-2.5 shrink-0" />
+                            <span>{order.callAttempts}/3</span>
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Middle Row: Customer & Price */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar className="h-8 w-8 border-none bg-zinc-100 shrink-0">
+                          <AvatarFallback className="bg-zinc-100 text-zinc-700 text-[10px] font-bold">
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="font-bold text-zinc-900 text-xs truncate">
+                            {order.customer.name}
+                          </p>
+                          <a
+                            href={`tel:${order.customer.phone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            dir="ltr"
+                            className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-500 hover:text-zinc-900 hover:underline mt-0.5"
+                          >
+                            <Phone className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                            <span>{order.customer.phone}</span>
+                          </a>
+                        </div>
+                      </div>
+
+                      <div className="text-end shrink-0">
+                        <p className="font-bold text-zinc-900 text-sm">
+                          {formatPrice(order.total, locale)}
+                        </p>
+                        <div className="mt-0.5 flex items-center justify-end gap-1">
+                          {order.isPaid ? (
+                            <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                              ✓ {locale === "ar" ? "محصلة" : "Payé"}
+                            </span>
+                          ) : order.status !== "cancelled" ? (
+                            <span className="inline-flex items-center text-[9px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200">
+                              COD
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Destination, Items & Quick Actions */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-100">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-zinc-100 text-zinc-700 max-w-[180px] truncate">
+                          <MapPin className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                          <span className="truncate">
+                            {getWilayaLabel(order.wilaya, locale)}
+                            {order.commune ? ` • ${order.commune}` : ""}
+                          </span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-100 text-zinc-700 text-[10px] font-semibold">
+                          <ShoppingBag className="w-2.5 h-2.5 text-zinc-400 shrink-0" />
+                          <span>
+                            {totalItemsCount}{" "}
+                            {locale === "ar"
+                              ? totalItemsCount > 1
+                                ? "عطور"
+                                : "عطر"
+                              : totalItemsCount > 1
+                              ? "pcs"
+                              : "pc"}
+                          </span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 ms-auto">
+                        {order.trackingCode && (
+                          <>
+                            <span
+                              className={`inline-flex items-center gap-1 px-1.5 py-1 rounded text-[9px] font-mono font-bold ${
+                                isAndersonRow
+                                  ? "bg-orange-950 text-orange-300"
+                                  : "bg-zinc-900 text-amber-300"
+                              }`}
+                            >
+                              {carrierLabelRow}
+                            </span>
+                            {order.shippingLabelUrl && (
+                              <a
+                                href={order.shippingLabelUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-1.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                              </a>
+                            )}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleCopy(order.reference || order.id, order.id);
+                                handleOpenWhatsApp(order);
                               }}
-                              title="Copier la référence"
-                              className="p-0.5 text-zinc-400 hover:text-zinc-900 cursor-pointer"
+                              className="p-1.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80"
                             >
-                              {copiedId === order.id ? (
-                                <Check className="w-3 h-3 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3 h-3" />
-                              )}
+                              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
                             </button>
-                          </div>
-                          <div className="text-[11px] text-zinc-400 mt-0.5 whitespace-nowrap">
-                            {new Date(order.createdAt).toLocaleDateString(
-                              locale === "ar" ? "ar-DZ" : "fr-DZ",
-                              { day: "2-digit", month: "short" }
-                            )}{" "}
-                            <span className="font-mono text-[10px] text-zinc-400">
-                              {new Date(order.createdAt).toLocaleTimeString(
-                                locale === "ar" ? "ar-DZ" : "fr-DZ",
-                                { hour: "2-digit", minute: "2-digit" }
-                              )}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* 3. Customer & Phone with Avatar */}
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-6 w-6 border-none bg-zinc-100 shrink-0">
-                              <AvatarFallback className="bg-zinc-100 text-zinc-700 text-[9px] font-bold">
-                                {initials}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="min-w-0">
-                              <p className="font-bold text-zinc-900 leading-tight text-xs truncate max-w-[130px]">
-                                {order.customer.name}
-                              </p>
-                              <a
-                                href={`tel:${order.customer.phone}`}
-                                onClick={(e) => e.stopPropagation()}
-                                dir="ltr"
-                                className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-400 hover:text-zinc-900 hover:underline mt-0.5 whitespace-nowrap"
-                              >
-                                <Phone className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                <span>{order.customer.phone}</span>
-                              </a>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* 4. Wilaya & Commune */}
-                        <td className="py-3 px-3">
-                          <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-100 text-zinc-700 whitespace-nowrap">
-                            <MapPin className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                            <span>{getWilayaLabel(order.wilaya, locale)}</span>
-                          </div>
-                          <p className="text-[10px] text-zinc-400 mt-0.5 truncate max-w-[120px]">
-                            {order.commune}
-                          </p>
-                        </td>
-
-                        {/* 5. Items Summary */}
-                        <td className="py-3 px-2.5 text-center whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-700 text-[11px] font-semibold">
-                            <ShoppingBag className="w-3 h-3 text-zinc-400 shrink-0" />
-                            <span>
-                              {totalItemsCount}{" "}
-                              {locale === "ar"
-                                ? totalItemsCount > 1
-                                  ? "عطور"
-                                  : "عطر"
-                                : totalItemsCount > 1
-                                ? "pcs"
-                                : "pc"}
-                            </span>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleExpand(order.id);
+                          }}
+                          className={`px-2.5 py-1 text-[11px] rounded-lg font-semibold border transition-all inline-flex items-center gap-1 cursor-pointer ${
+                            isExpanded
+                              ? "bg-zinc-900 text-white border-zinc-900"
+                              : "bg-white text-zinc-700 border-zinc-200/80 hover:bg-zinc-100"
+                          }`}
+                        >
+                          <span>
+                            {isExpanded
+                              ? locale === "ar"
+                                ? "إغلاق"
+                                : "Fermer"
+                              : locale === "ar"
+                              ? "عرض"
+                              : "Détails"}
                           </span>
-                        </td>
-
-                        {/* 6. Total Amount & Paid Badge */}
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <p className="font-bold text-zinc-900 text-xs">
-                            {formatPrice(order.total, locale)}
-                          </p>
-                          <div className="mt-0.5">
-                            {order.isPaid ? (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
-                                ✓ {locale === "ar" ? "محصلة" : "Payé"}
-                              </span>
-                            ) : order.status !== "cancelled" ? (
-                              <span className="inline-flex items-center text-[9px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200">
-                                COD
-                              </span>
-                            ) : null}
-                          </div>
-                        </td>
-
-                        {/* 7. Status Badge & Tracking */}
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${config.className}`}
-                            >
-                              <span className="h-1.5 w-1.5 rounded-full bg-current shrink-0" />
-                              <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
-                            </span>
-
-                            {order.status === "new" && order.callAttempts && order.callAttempts > 0 ? (
-                              <span
-                                title={
-                                  order.lastAttemptAt
-                                    ? `Dernier appel: ${new Date(order.lastAttemptAt).toLocaleTimeString("fr-DZ", { hour: "2-digit", minute: "2-digit" })}`
-                                    : undefined
-                                }
-                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border whitespace-nowrap ${
-                                  order.callAttempts === 3
-                                    ? "bg-rose-50 text-rose-700 border-rose-300 animate-pulse"
-                                    : order.callAttempts === 2
-                                    ? "bg-amber-50 text-amber-700 border-amber-300"
-                                    : "bg-amber-50 text-amber-800 border-amber-300"
-                                }`}
-                              >
-                                <PhoneCall className="w-2.5 h-2.5 shrink-0" />
-                                <span>{order.callAttempts}/3</span>
-                              </span>
-                            ) : null}
-                          </div>
-
-                          {order.trackingCode ? (
-                            (() => {
-                              const isAnderson =
-                                order.shippingCarrier === "anderson" ||
-                                order.deliveryService?.toLowerCase().includes("anderson");
-                              const carrierLabel = isAnderson ? "Anderson" : "Navex";
-
-                              return (
-                                <div className="mt-1 flex items-center gap-1 flex-wrap">
-                                  <span
-                                    title={`${carrierLabel}: ${order.trackingCode}`}
-                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shadow-2xs whitespace-nowrap ${
-                                      isAnderson
-                                        ? "bg-orange-950 text-orange-300 border border-orange-800/60"
-                                        : "bg-zinc-900 text-amber-300 border border-zinc-700"
-                                    }`}
-                                  >
-                                    {isAnderson ? (
-                                      <Package className="w-2.5 h-2.5 text-orange-400 shrink-0" />
-                                    ) : (
-                                      <Truck className="w-2.5 h-2.5 text-amber-400 shrink-0" />
-                                    )}
-                                    <span>{carrierLabel}</span>
-                                  </span>
-                                  {order.shippingLabelUrl && (
-                                    <a
-                                      href={order.shippingLabelUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      onClick={(e) => e.stopPropagation()}
-                                      title={locale === "ar" ? "طباعة بوليصة الشحن (PDF)" : `Imprimer bordereau PDF (${carrierLabel})`}
-                                      className="p-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 transition-colors cursor-pointer"
-                                    >
-                                      <FileText className="w-3 h-3" />
-                                    </a>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenWhatsApp(order);
-                                    }}
-                                    title={locale === "ar" ? "إشعار الزبون عبر واتساب" : "Notifier le client via WhatsApp"}
-                                    className="p-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 transition-colors cursor-pointer"
-                                  >
-                                    <MessageCircle className="w-3 h-3 text-emerald-600" />
-                                  </button>
-                                </div>
-                              );
-                            })()
+                          {isExpanded ? (
+                            <ChevronUp className="w-3 h-3" />
                           ) : (
-                            order.status === "confirmed" && (
-                              <div className="mt-1 flex items-center gap-1 flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSendToEcoTrack(order, "navex");
-                                  }}
-                                  disabled={shippingLoadingId === order.id}
-                                  title="Expédier avec Navex Delivery en 1-clic"
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-600 hover:bg-amber-700 text-white transition-all cursor-pointer disabled:opacity-50 shadow-2xs whitespace-nowrap"
-                                >
-                                  {shippingLoadingId === order.id ? (
-                                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                  ) : (
-                                    <Truck className="w-2.5 h-2.5" />
-                                  )}
-                                  <span>Navex</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSendToEcoTrack(order, "anderson");
-                                  }}
-                                  disabled={shippingLoadingId === order.id}
-                                  title="Expédier avec Anderson Logistique en 1-clic"
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-600 hover:bg-orange-700 text-white transition-all cursor-pointer disabled:opacity-50 shadow-2xs whitespace-nowrap"
-                                >
-                                  {shippingLoadingId === order.id ? (
-                                    <Loader2 className="w-2.5 h-2.5 animate-spin text-white" />
-                                  ) : (
-                                    <Package className="w-2.5 h-2.5" />
-                                  )}
-                                  <span>Anderson</span>
-                                </button>
-                              </div>
-                            )
+                            <ChevronDown className="w-3 h-3" />
                           )}
-                        </td>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
-                        {/* 8. Open Button */}
-                        <td className="py-3 px-2.5 text-center whitespace-nowrap">
+                  {/* ── DESKTOP TABLE ROW VIEW (lg+) ── */}
+                  <div
+                    onClick={() => toggleExpand(order.id)}
+                    className={`hidden lg:grid lg:grid-cols-[40px_135px_minmax(155px,1.2fr)_minmax(125px,1fr)_82px_115px_minmax(165px,1.1fr)_90px] items-center transition-colors cursor-pointer select-none ${
+                      isExpanded ? "bg-amber-50/25" : "hover:bg-zinc-50/70"
+                    }`}
+                  >
+                    {/* 1. Expand Chevron */}
+                    <div className="py-3 px-2 text-center text-zinc-400">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleExpand(order.id);
+                        }}
+                        className="p-1 rounded-md hover:bg-zinc-100 text-zinc-400 hover:text-zinc-900 transition-colors cursor-pointer"
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-amber-600" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+
+                    {/* 2. Order Reference & Date */}
+                    <div className="py-3 px-3 min-w-0">
+                      <div className="flex items-center gap-1 font-mono font-bold text-zinc-900 text-xs whitespace-nowrap">
+                        <span className="truncate">{order.reference || order.id.slice(0, 8)}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopy(order.reference || order.id, order.id);
+                          }}
+                          title="Copier la référence"
+                          className="p-0.5 text-zinc-400 hover:text-zinc-900 cursor-pointer shrink-0"
+                        >
+                          {copiedId === order.id ? (
+                            <Check className="w-3 h-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-400 mt-0.5 whitespace-nowrap">
+                        {new Date(order.createdAt).toLocaleDateString(
+                          locale === "ar" ? "ar-DZ" : "fr-DZ",
+                          { day: "2-digit", month: "short" }
+                        )}{" "}
+                        <span className="font-mono text-[10px] text-zinc-400">
+                          {new Date(order.createdAt).toLocaleTimeString(
+                            locale === "ar" ? "ar-DZ" : "fr-DZ",
+                            { hour: "2-digit", minute: "2-digit" }
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 3. Customer & Phone with Avatar */}
+                    <div className="py-3 px-3 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Avatar className="h-6 w-6 border-none bg-zinc-100 shrink-0">
+                          <AvatarFallback className="bg-zinc-100 text-zinc-700 text-[9px] font-bold">
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="font-bold text-zinc-900 leading-tight text-xs truncate">
+                            {order.customer.name}
+                          </p>
+                          <a
+                            href={`tel:${order.customer.phone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            dir="ltr"
+                            className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-400 hover:text-zinc-900 hover:underline mt-0.5 whitespace-nowrap"
+                          >
+                            <Phone className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                            <span>{order.customer.phone}</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4. Wilaya & Commune */}
+                    <div className="py-3 px-3 min-w-0">
+                      <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-100 text-zinc-700 max-w-full">
+                        <MapPin className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                        <span className="truncate">{getWilayaLabel(order.wilaya, locale)}</span>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-0.5 truncate">
+                        {order.commune}
+                      </p>
+                    </div>
+
+                    {/* 5. Items Summary */}
+                    <div className="py-3 px-2.5 text-center whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-700 text-[11px] font-semibold">
+                        <ShoppingBag className="w-3 h-3 text-zinc-400 shrink-0" />
+                        <span>
+                          {totalItemsCount}{" "}
+                          {locale === "ar"
+                            ? totalItemsCount > 1
+                              ? "عطور"
+                              : "عطر"
+                            : totalItemsCount > 1
+                            ? "pcs"
+                            : "pc"}
+                        </span>
+                      </span>
+                    </div>
+
+                    {/* 6. Total Amount & Paid Badge */}
+                    <div className="py-3 px-3 whitespace-nowrap">
+                      <p className="font-bold text-zinc-900 text-xs">
+                        {formatPrice(order.total, locale)}
+                      </p>
+                      <div className="mt-0.5">
+                        {order.isPaid ? (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                            ✓ {locale === "ar" ? "محصلة" : "Payé"}
+                          </span>
+                        ) : order.status !== "cancelled" ? (
+                          <span className="inline-flex items-center text-[9px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200">
+                            COD
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* 7. Status Badge & Tracking */}
+                    <div className="py-3 px-3 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${config.className}`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-current shrink-0" />
+                          <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
+                        </span>
+
+                        {order.status === "new" && order.callAttempts && order.callAttempts > 0 ? (
+                          <span
+                            title={
+                              order.lastAttemptAt
+                                ? `Dernier appel: ${new Date(order.lastAttemptAt).toLocaleTimeString("fr-DZ", { hour: "2-digit", minute: "2-digit" })}`
+                                : undefined
+                            }
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border whitespace-nowrap ${
+                              order.callAttempts === 3
+                                ? "bg-rose-50 text-rose-700 border-rose-300 animate-pulse"
+                                : order.callAttempts === 2
+                                ? "bg-amber-50 text-amber-700 border-amber-300"
+                                : "bg-amber-50 text-amber-800 border-amber-300"
+                            }`}
+                          >
+                            <PhoneCall className="w-2.5 h-2.5 shrink-0" />
+                            <span>{order.callAttempts}/3</span>
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {order.trackingCode ? (
+                        <div className="mt-1 flex items-center gap-1 flex-wrap">
+                          <span
+                            title={`${carrierLabelRow}: ${order.trackingCode}`}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shadow-2xs whitespace-nowrap ${
+                              isAndersonRow
+                                ? "bg-orange-950 text-orange-300 border border-orange-800/60"
+                                : "bg-zinc-900 text-amber-300 border border-zinc-700"
+                            }`}
+                          >
+                            {isAndersonRow ? (
+                              <Package className="w-2.5 h-2.5 text-orange-400 shrink-0" />
+                            ) : (
+                              <Truck className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                            )}
+                            <span>{carrierLabelRow}</span>
+                          </span>
+                          {order.shippingLabelUrl && (
+                            <a
+                              href={order.shippingLabelUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title={locale === "ar" ? "طباعة بوليصة الشحن (PDF)" : `Imprimer bordereau PDF (${carrierLabelRow})`}
+                              className="p-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 transition-colors cursor-pointer"
+                            >
+                              <FileText className="w-3 h-3" />
+                            </a>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              toggleExpand(order.id);
+                              handleOpenWhatsApp(order);
                             }}
-                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold border transition-all inline-flex items-center gap-1 cursor-pointer shadow-2xs ${
-                              isExpanded
-                                ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
-                                : "bg-white text-zinc-700 border-zinc-200/80 hover:bg-zinc-100 hover:text-zinc-900"
-                            }`}
+                            title={locale === "ar" ? "إشعار الزبون عبر واتساب" : "Notifier le client via WhatsApp"}
+                            className="p-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 transition-colors cursor-pointer"
                           >
-                            <span>{isExpanded ? (locale === "ar" ? "إغلاق" : "Fermer") : (locale === "ar" ? "عرض" : "Détails")}</span>
-                            {isExpanded ? (
-                              <ChevronUp className="w-3 h-3" />
-                            ) : (
-                              <ChevronDown className="w-3 h-3" />
-                            )}
+                            <MessageCircle className="w-3 h-3 text-emerald-600" />
                           </button>
-                        </td>
-                      </tr>
+                        </div>
+                      ) : (
+                        order.status === "confirmed" && (
+                          <div className="mt-1 flex items-center gap-1 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSendToEcoTrack(order, "navex");
+                              }}
+                              disabled={shippingLoadingId === order.id}
+                              title="Expédier avec Navex Delivery en 1-clic"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-600 hover:bg-amber-700 text-white transition-all cursor-pointer disabled:opacity-50 shadow-2xs whitespace-nowrap"
+                            >
+                              {shippingLoadingId === order.id ? (
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                              ) : (
+                                <Truck className="w-2.5 h-2.5" />
+                              )}
+                              <span>Navex</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSendToEcoTrack(order, "anderson");
+                              }}
+                              disabled={shippingLoadingId === order.id}
+                              title="Expédier avec Anderson Logistique en 1-clic"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-600 hover:bg-orange-700 text-white transition-all cursor-pointer disabled:opacity-50 shadow-2xs whitespace-nowrap"
+                            >
+                              {shippingLoadingId === order.id ? (
+                                <Loader2 className="w-2.5 h-2.5 animate-spin text-white" />
+                              ) : (
+                                <Package className="w-2.5 h-2.5" />
+                              )}
+                              <span>Anderson</span>
+                            </button>
+                          </div>
+                        )
+                      )}
+                    </div>
 
-                      {/* Expanded Row Content */}
-                      {isExpanded && (
-                        <tr className="bg-zinc-50/70">
-                          <td colSpan={8} className="p-4 sm:p-6 border-b border-zinc-200/80">
-                            <div className="space-y-6">
+                    {/* 8. Open Button */}
+                    <div className="py-3 px-2.5 text-center whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleExpand(order.id);
+                        }}
+                        className={`px-2.5 py-1 text-xs rounded-lg font-semibold border transition-all inline-flex items-center gap-1 cursor-pointer shadow-2xs ${
+                          isExpanded
+                            ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
+                            : "bg-white text-zinc-700 border-zinc-200/80 hover:bg-zinc-100 hover:text-zinc-900"
+                        }`}
+                      >
+                        <span>{isExpanded ? (locale === "ar" ? "إغلاق" : "Fermer") : (locale === "ar" ? "عرض" : "Détails")}</span>
+                        {isExpanded ? (
+                          <ChevronUp className="w-3 h-3" />
+                        ) : (
+                          <ChevronDown className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── SHARED EXPANDED DETAILS PANEL (100% full-width on mobile & desktop) ── */}
+                  {isExpanded && (
+                    <div className="bg-zinc-50/70 p-3.5 sm:p-6 border-t border-zinc-200/80">
+                      <div className="space-y-5 sm:space-y-6">
                               {/* 1. Interactive Lifecycle Timeline Stepper */}
-                              <div className="bg-white p-5 rounded-xl border border-zinc-200/80 shadow-xs">
-                                <div className="flex items-center justify-between mb-4 pb-3 border-b border-zinc-100">
+                              <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-zinc-200/80 shadow-xs">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-4 pb-3 border-b border-zinc-100">
                                   <p className="text-xs uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-2">
                                     <Clock className="w-4 h-4 text-amber-600" />
                                     <span>
@@ -1680,11 +1979,11 @@ export function OrdersManagerClient({
                                     <div className="bg-zinc-900/60 rounded-xl p-4 border border-zinc-800 space-y-4">
                                       {/* Carrier Selection Switcher */}
                                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-zinc-950/80 border border-zinc-800">
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                                           <span className="text-xs font-semibold text-zinc-300">
                                             {locale === "ar" ? "شركة الشحن :" : "Transporteur :"}
                                           </span>
-                                          <div className="inline-flex rounded-lg p-1 bg-zinc-900 border border-zinc-800">
+                                          <div className="inline-flex flex-wrap rounded-lg p-1 bg-zinc-900 border border-zinc-800 gap-1">
                                             <button
                                               type="button"
                                               onClick={() =>
@@ -1944,18 +2243,15 @@ export function OrdersManagerClient({
                                 </div>
                               </div>
                             </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
 
           {/* Table Footer with Pagination */}
-          <div className="px-5 py-3.5 bg-zinc-50/90 border-t border-zinc-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-600 font-medium">
+          <div className="px-3.5 sm:px-5 py-3.5 bg-zinc-50/90 border-t border-zinc-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-600 font-medium">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span>
                 {locale === "ar"
