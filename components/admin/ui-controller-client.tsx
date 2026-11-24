@@ -34,9 +34,12 @@ import {
   MessageSquare,
   Trash2,
   Star,
+  Palette,
 } from "lucide-react";
 import { Testimonial } from "@/types/testimonial";
 import { deleteTestimonialAction } from "@/lib/actions/testimonials";
+import { ThemeSelectorPanel } from "@/components/admin/theme-selector-panel";
+import { resolveStorefrontThemeId } from "@/lib/themes/storefront-themes";
 
 interface UiControllerClientProps {
   initialContent: StorefrontContent;
@@ -44,7 +47,7 @@ interface UiControllerClientProps {
   locale: Locale;
 }
 
-type TabKey = "hero" | "gender" | "seasons" | "collections" | "customPack" | "testimonials";
+type TabKey = "themes" | "hero" | "gender" | "seasons" | "collections" | "customPack" | "testimonials";
 
 /**
  * Validate that an image source string is safe and valid for Next.js Image
@@ -295,7 +298,7 @@ export function UiControllerClient({
   }));
   const [testimonialsList, setTestimonialsList] = useState<Testimonial[]>(initialTestimonials);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("hero");
+  const [activeTab, setActiveTab] = useState<TabKey>("themes");
   const [isPending, startTransition] = useTransition();
   const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error";
@@ -593,6 +596,19 @@ export function UiControllerClient({
       <div className="flex border-b border-luxury-border/40 gap-2 sm:gap-4 overflow-x-auto">
         <button
           type="button"
+          onClick={() => setActiveTab("themes")}
+          className={`pb-3 px-3 text-xs sm:text-sm font-medium transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            activeTab === "themes"
+              ? "border-luxury-accent text-luxury-accent font-semibold"
+              : "border-transparent text-luxury-text-muted hover:text-luxury-text"
+          }`}
+        >
+          <Palette className="w-4 h-4" />
+          <span>{locale === "ar" ? "0. تصاميم المتجر (8 ثيمات)" : "0. Thèmes & Design (8)"}</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab("hero")}
           className={`pb-3 px-3 text-xs sm:text-sm font-medium transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
             activeTab === "hero"
@@ -674,6 +690,24 @@ export function UiControllerClient({
       </div>
 
       {/* ============================================================== */}
+      {/* TAB 0: STOREFRONT THEMES GALLERY */}
+      {activeTab === "themes" && (
+        <ThemeSelectorPanel
+          currentThemeId={resolveStorefrontThemeId(content.themeId)}
+          onThemeApplied={(nextThemeId) => {
+            setContent((prev) => ({ ...prev, themeId: nextThemeId }));
+            setStatusMessage({
+              type: "success",
+              text:
+                locale === "ar"
+                  ? "تم تغيير تصميم المتجر بنجاح! يمكنك معاينته مباشرة الآن."
+                  : "Thème de la vitrine mis à jour ! Le nouveau design est actif sur tout le site.",
+            });
+          }}
+          locale={locale}
+        />
+      )}
+
       {/* TAB 1: HERO SECTION */}
       {/* ============================================================== */}
       {activeTab === "hero" && (

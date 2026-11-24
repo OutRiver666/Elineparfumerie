@@ -38,7 +38,7 @@ export function SizePicker({
                 ? "text-[10px] px-2 py-0.5 rounded-[3px]"
                 : "text-xs px-3 py-1.5 rounded-[4px]",
               isSelected
-                ? "bg-luxury-text text-white shadow-subtle"
+                ? "bg-luxury-text text-luxury-bg shadow-subtle"
                 : "bg-luxury-secondary text-luxury-text-secondary hover:bg-luxury-surface hover:text-luxury-text"
             )}
             title={`${formatBottleSize(v.size)} - ${v.stock > 0 ? "En stock" : "Rupture"}`}

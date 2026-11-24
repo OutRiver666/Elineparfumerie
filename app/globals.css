@@ -33,24 +33,45 @@
     --ring: 28 30% 47%;
 
     --radius: 0.375rem;
+
+    /* Default Luxury RGB Tokens (Atelier Ivoire — also used by Admin Dashboard) */
+    --lux-bg: 255 255 255;
+    --lux-secondary: 248 247 244;
+    --lux-surface: 242 240 236;
+    --lux-text: 23 23 23;
+    --lux-text-secondary: 115 115 115;
+    --lux-text-muted: 163 163 163;
+    --lux-accent: 154 118 85;
+    --lux-accent-hover: 131 100 70;
+    --lux-accent-light: 247 243 238;
+    --lux-border: 235 232 225;
+    --lux-gold: 197 168 128;
+
+    /* Theme Typography & Geometry Defaults */
+    --font-theme-display: var(--font-serif);
+    --font-theme-body: var(--font-sans);
+    --font-theme-arabic: var(--font-arabic);
+    --theme-card-radius: 6px;
+    --theme-btn-radius: 4px;
+    --theme-header-bg: rgba(255, 255, 255, 0.94);
   }
 
   * {
-    border-color: #EBE8E1;
+    border-color: rgb(var(--lux-border));
   }
 
   body {
-    background-color: #FFFFFF;
-    color: #171717;
+    background-color: rgb(var(--lux-bg));
+    color: rgb(var(--lux-text));
     font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Selection highlight with luxury bronze accent */
+  /* Selection highlight with active theme accent */
   ::selection {
-    background-color: #F4EFEA;
-    color: #9A7655;
+    background-color: rgb(var(--lux-accent) / 0.16);
+    color: rgb(var(--lux-accent));
   }
 
   /* RTL Specific Adjustments */
@@ -58,8 +79,9 @@
     letter-spacing: 0px !important;
   }
 
-  [dir="rtl"] body {
-    font-family: var(--font-arabic), "Amiri", "IBM Plex Sans Arabic", "Segoe UI", sans-serif;
+  [dir="rtl"] body,
+  [dir="rtl"] .storefront-theme {
+    font-family: var(--font-theme-arabic), var(--font-arabic), "Amiri", "Segoe UI", sans-serif;
   }
 
   /* Custom subtle scrollbar */
@@ -69,25 +91,226 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: #F8F7F4;
+    background: rgb(var(--lux-secondary));
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #D9D4CC;
+    background: rgb(var(--lux-border));
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #9A7655;
+    background: rgb(var(--lux-accent));
   }
+}
+
+/* ============================================================================
+   8 STOREFRONT LUXURY THEMES (Scoped strictly to .storefront-theme)
+   Admin Dashboard remains cleanly on default tokens.
+   ============================================================================ */
+
+.storefront-theme {
+  background-color: rgb(var(--lux-bg));
+  color: rgb(var(--lux-text));
+  font-family: var(--font-theme-body), var(--font-sans), sans-serif;
+}
+
+/* 1. ATELIER IVOIRE (Classic Parisian) */
+.storefront-theme[data-theme="atelier-ivoire"] {
+  --lux-bg: 255 255 255;
+  --lux-secondary: 248 247 244;
+  --lux-surface: 242 240 236;
+  --lux-text: 23 23 23;
+  --lux-text-secondary: 115 115 115;
+  --lux-text-muted: 155 150 144;
+  --lux-accent: 154 118 85;
+  --lux-accent-hover: 131 100 70;
+  --lux-accent-light: 247 243 238;
+  --lux-border: 235 232 225;
+  --lux-gold: 197 168 128;
+  --font-theme-display: var(--font-serif);
+  --font-theme-body: var(--font-sans);
+  --font-theme-arabic: var(--font-arabic);
+  --theme-card-radius: 6px;
+  --theme-btn-radius: 4px;
+  --theme-header-bg: rgba(255, 255, 255, 0.94);
+}
+
+/* 2. AZUR RIVIERA (Light Blue, Dark Navy Blue & Crisp White) */
+.storefront-theme[data-theme="azur-riviera"] {
+  --lux-bg: 255 255 255;
+  --lux-secondary: 239 246 255;
+  --lux-surface: 219 234 254;
+  --lux-text: 10 30 63;
+  --lux-text-secondary: 59 86 122;
+  --lux-text-muted: 100 132 168;
+  --lux-accent: 29 120 216;
+  --lux-accent-hover: 18 89 170;
+  --lux-accent-light: 224 242 254;
+  --lux-border: 191 219 254;
+  --lux-gold: 56 189 248;
+  --font-theme-display: var(--font-cormorant);
+  --font-theme-body: var(--font-jakarta);
+  --font-theme-arabic: var(--font-tajawal);
+  --theme-card-radius: 16px;
+  --theme-btn-radius: 9999px;
+  --theme-header-bg: rgba(255, 255, 255, 0.94);
+}
+
+/* 3. OUD NOIR (Dark Haute Parfumerie — Obsidian & Champagne Gold) */
+.storefront-theme[data-theme="oud-noir"] {
+  --lux-bg: 9 9 11;
+  --lux-secondary: 20 19 22;
+  --lux-surface: 28 26 30;
+  --lux-text: 245 240 230;
+  --lux-text-secondary: 184 176 164;
+  --lux-text-muted: 136 128 118;
+  --lux-accent: 212 175 106;
+  --lux-accent-hover: 192 152 82;
+  --lux-accent-light: 38 33 26;
+  --lux-border: 52 47 42;
+  --lux-gold: 224 192 126;
+  --font-theme-display: var(--font-cinzel);
+  --font-theme-body: var(--font-montserrat);
+  --font-theme-arabic: var(--font-arabic);
+  --theme-card-radius: 4px;
+  --theme-btn-radius: 2px;
+  --theme-header-bg: rgba(9, 9, 11, 0.92);
+}
+
+/* 4. ROSE DE GRASSE (Soft Couture — Blush Silk & Velvet Rosewood) */
+.storefront-theme[data-theme="rose-de-grasse"] {
+  --lux-bg: 253 248 246;
+  --lux-secondary: 247 236 232;
+  --lux-surface: 242 226 221;
+  --lux-text: 42 24 29;
+  --lux-text-secondary: 122 86 95;
+  --lux-text-muted: 160 124 132;
+  --lux-accent: 136 54 76;
+  --lux-accent-hover: 112 40 60;
+  --lux-accent-light: 250 238 235;
+  --lux-border: 234 212 206;
+  --lux-gold: 212 163 147;
+  --font-theme-display: var(--font-bodoni);
+  --font-theme-body: var(--font-dmsans);
+  --font-theme-arabic: var(--font-cairo);
+  --theme-card-radius: 20px;
+  --theme-btn-radius: 9999px;
+  --theme-header-bg: rgba(253, 248, 246, 0.94);
+}
+
+/* 5. ÉMERAUDE IMPÉRIALE (Royal Oriental — Forest Emerald, Parchment & Gold) */
+.storefront-theme[data-theme="emeraude-imperiale"] {
+  --lux-bg: 251 248 241;
+  --lux-secondary: 242 238 227;
+  --lux-surface: 232 227 213;
+  --lux-text: 13 43 34;
+  --lux-text-secondary: 68 96 86;
+  --lux-text-muted: 112 136 126;
+  --lux-accent: 16 86 64;
+  --lux-accent-hover: 11 66 49;
+  --lux-accent-light: 234 244 239;
+  --lux-border: 214 205 184;
+  --lux-gold: 197 160 89;
+  --font-theme-display: var(--font-cormorant);
+  --font-theme-body: var(--font-jakarta);
+  --font-theme-arabic: var(--font-arabic);
+  --theme-card-radius: 4px;
+  --theme-btn-radius: 3px;
+  --theme-header-bg: rgba(251, 248, 241, 0.94);
+}
+
+/* 6. SAHARA AMBRE (Warm Sculptural Terracotta & Desert Sand) */
+.storefront-theme[data-theme="sahara-ambre"] {
+  --lux-bg: 251 246 238;
+  --lux-secondary: 243 233 219;
+  --lux-surface: 236 221 203;
+  --lux-text: 44 26 17;
+  --lux-text-secondary: 120 86 68;
+  --lux-text-muted: 162 128 108;
+  --lux-accent: 184 83 40;
+  --lux-accent-hover: 152 65 28;
+  --lux-accent-light: 250 236 224;
+  --lux-border: 226 208 187;
+  --lux-gold: 217 151 86;
+  --font-theme-display: var(--font-fraunces);
+  --font-theme-body: var(--font-jakarta);
+  --font-theme-arabic: var(--font-tajawal);
+  --theme-card-radius: 16px;
+  --theme-btn-radius: 10px;
+  --theme-header-bg: rgba(251, 246, 238, 0.94);
+}
+
+/* 7. MONOCHROME ÉDITORIAL (High-Fashion Magazine — Stark Black & White) */
+.storefront-theme[data-theme="monochrome-editorial"] {
+  --lux-bg: 255 255 255;
+  --lux-secondary: 244 244 245;
+  --lux-surface: 234 234 237;
+  --lux-text: 9 9 11;
+  --lux-text-secondary: 82 82 91;
+  --lux-text-muted: 132 132 142;
+  --lux-accent: 9 9 11;
+  --lux-accent-hover: 39 39 42;
+  --lux-accent-light: 244 244 245;
+  --lux-border: 212 212 216;
+  --lux-gold: 24 24 27;
+  --font-theme-display: var(--font-syne);
+  --font-theme-body: var(--font-sans);
+  --font-theme-arabic: var(--font-cairo);
+  --theme-card-radius: 0px;
+  --theme-btn-radius: 0px;
+  --theme-header-bg: rgba(255, 255, 255, 0.96);
+}
+
+/* 8. MIDNIGHT SAPPHIRE (Deep Night Blue, Ice Blue & Silver-Gold) */
+.storefront-theme[data-theme="midnight-sapphire"] {
+  --lux-bg: 6 17 36;
+  --lux-secondary: 12 27 54;
+  --lux-surface: 20 39 74;
+  --lux-text: 241 245 249;
+  --lux-text-secondary: 165 187 216;
+  --lux-text-muted: 118 146 184;
+  --lux-accent: 88 166 255;
+  --lux-accent-hover: 59 139 235;
+  --lux-accent-light: 18 39 72;
+  --lux-border: 34 61 106;
+  --lux-gold: 147 197 253;
+  --font-theme-display: var(--font-prata);
+  --font-theme-body: var(--font-dmsans);
+  --font-theme-arabic: var(--font-tajawal);
+  --theme-card-radius: 12px;
+  --theme-btn-radius: 8px;
+  --theme-header-bg: rgba(6, 17, 36, 0.92);
+}
+
+/* Dark themes: ensure cards, inputs & panels inside storefront maintain flawless dark contrast */
+.storefront-theme[data-theme-mode="dark"] .bg-white,
+.storefront-theme[data-theme-mode="dark"] .bg-white\/95,
+.storefront-theme[data-theme-mode="dark"] .bg-white\/90,
+.storefront-theme[data-theme-mode="dark"] .bg-white\/80,
+.storefront-theme[data-theme-mode="dark"] .bg-white\/50 {
+  background-color: rgb(var(--lux-secondary) / 0.92);
+}
+
+.storefront-theme[data-theme-mode="dark"] .theme-card-surface {
+  background-color: rgb(var(--lux-secondary));
+  border-color: rgb(var(--lux-border));
 }
 
 @layer utilities {
   /* Subtle glassmorphism for sticky luxury header */
   .header-glass {
-    background-color: rgba(255, 255, 255, 0.92);
+    background-color: var(--theme-header-bg, rgba(255, 255, 255, 0.92));
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+  }
+
+  .theme-rounded {
+    border-radius: var(--theme-card-radius, 6px);
+  }
+
+  .theme-btn-rounded {
+    border-radius: var(--theme-btn-radius, 4px);
   }
 
   /* Hide scrollbar for category and size carousels */

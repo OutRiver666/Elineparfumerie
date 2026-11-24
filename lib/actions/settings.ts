@@ -4,9 +4,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/security/auth-guard";
 import {
+  getStoreSettings,
+  getWilayaDeliveryRates,
   saveStoreSettings,
   saveWilayaDeliveryRates,
 } from "@/lib/services/settings.service";
+import { fetchEcoTrackCarrierFees } from "@/lib/services/ecotrack.service";
+import { DeliveryPricingTariffType, WilayaDeliveryRateRecord } from "@/types/settings";
 
 const generalSettingsSchema = z.object({
   brandName: z.string().min(2, "Nom de marque requis").max(120),
@@ -18,6 +22,10 @@ const generalSettingsSchema = z.object({
   pack3DiscountPct: z.coerce.number().min(0).max(90),
   pack5DiscountPct: z.coerce.number().min(0).max(90),
   pack10DiscountPct: z.coerce.number().min(0).max(90),
+  deliveryPricingMode: z.enum(["manual", "carrier"]).optional(),
+  deliveryPricingCarrierId: z.string().nullable().optional(),
+  deliveryPricingTariffType: z.enum(["home", "stop_desk"]).optional(),
+  deliveryPricingSyncedAt: z.string().nullable().optional(),
 });
 
 const wilayaRateSchema = z.object({
@@ -141,4 +149,138 @@ export async function saveAllSettingsAction(
     persistedGeneralToDb: generalRes.persistedToDb,
     wilayasUpdated: ratesRes.count,
   };
+}
+
+/**
+ * Fetches live delivery fees per wilaya from the selected EcoTrack carrier
+ * (Navex, Anderson, or any custom EcoTrack carrier) and applies them across all 69 wilayas.
+ */
+export async function syncWilayaRatesFromCarrierAction(
+  payload: {
+    carrierId: string;
+    tariffType: DeliveryPricingTariffType;
+  },
+  locale: string = "fr"
+): Promise<{
+  success: boolean;
+  carrierName?: string;
+  syncedAt?: string;
+  updatedCount?: number;
+  wilayaRates?: WilayaDeliveryRateRecord[];
+  error?: string;
+}> {
+  try {
+    await requireAdminPermission("settings_team", locale);
+
+    if (!payload.carrierId) {
+      return {
+        success: false,
+        error:
+          locale === "ar"
+            ? "يرجى اختيار شركة توصيل أولاً."
+            : "Veuillez sélectionner un transporteur EcoTrack.",
+      };
+    }
+
+    const tariffType: DeliveryPricingTariffType =
+      payload.tariffType === "stop_desk" ? "stop_desk" : "home";
+
+    const feesRes = await fetchEcoTrackCarrierFees(payload.carrierId);
+    if (!feesRes.success || !feesRes.ratesByWilayaCode) {
+      return {
+        success: false,
+        error:
+          feesRes.error ||
+          (locale === "ar"
+            ? "تعذر جلب أسعار التوصيل من شركة الشحن."
+            : "Impossible de récupérer les tarifs depuis EcoTrack."),
+      };
+    }
+
+    const currentRates = await getWilayaDeliveryRates();
+    const syncedAt = new Date().toISOString();
+    let updatedCount = 0;
+
+    const mergedRates: WilayaDeliveryRateRecord[] = currentRates.map((w) => {
+      const carrierFee = feesRes.ratesByWilayaCode![w.wilayaCode];
+      if (!carrierFee) return w;
+      const nextFee =
+        tariffType === "stop_desk" ? carrierFee.stopDeskFeeDZD : carrierFee.homeFeeDZD;
+      updatedCount++;
+      return {
+        ...w,
+        deliveryFeeDZD: nextFee,
+      };
+    });
+
+    // Persist updated rates directly to Supabase wilaya_delivery_rates
+    const saveRes = await saveWilayaDeliveryRates(
+      mergedRates.map((w) => ({
+        wilayaCode: w.wilayaCode,
+        deliveryFeeDZD: w.deliveryFeeDZD,
+        estimatedDays: w.estimatedDays,
+        isActive: w.isActive,
+      }))
+    );
+
+    if (!saveRes.success) {
+      return {
+        success: false,
+        error: saveRes.error || "Erreur lors de l'enregistrement des tarifs synchronisés.",
+      };
+    }
+
+    // Remember the active pricing mode & carrier in store settings
+    const currentSettings = await getStoreSettings();
+    await saveStoreSettings({
+      ...currentSettings,
+      deliveryPricingMode: "carrier",
+      deliveryPricingCarrierId: feesRes.carrierId || payload.carrierId,
+      deliveryPricingTariffType: tariffType,
+      deliveryPricingSyncedAt: syncedAt,
+    });
+
+    revalidateStoreAndAdminPaths(locale);
+
+    return {
+      success: true,
+      carrierName: feesRes.carrierName,
+      syncedAt,
+      updatedCount,
+      wilayaRates: mergedRates,
+    };
+  } catch (err: any) {
+    console.error("[syncWilayaRatesFromCarrierAction] Error:", err);
+    return {
+      success: false,
+      error:
+        err?.message ||
+        (locale === "ar"
+          ? "حدث خطأ أثناء مزامنة أسعار التوصيل."
+          : "Erreur inattendue lors de la synchronisation des tarifs."),
+    };
+  }
+}
+
+/**
+ * Switches delivery pricing mode back to manual editing.
+ */
+export async function setDeliveryPricingModeManualAction(
+  locale: string = "fr"
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireAdminPermission("settings_team", locale);
+    const currentSettings = await getStoreSettings();
+    const res = await saveStoreSettings({
+      ...currentSettings,
+      deliveryPricingMode: "manual",
+    });
+    if (!res.success) {
+      return { success: false, error: res.error };
+    }
+    revalidateStoreAndAdminPaths(locale);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Erreur lors du changement de mode." };
+  }
 }

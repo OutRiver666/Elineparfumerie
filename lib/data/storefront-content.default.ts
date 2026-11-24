@@ -1,6 +1,7 @@
 import { StorefrontContent } from "@/types/storefront-content";
 
 export const DEFAULT_STOREFRONT_CONTENT: StorefrontContent = {
+  themeId: "atelier-ivoire",
   hero: {
     badgeFr: "Haute Parfumerie Artisanale d'Algérie",
     badgeAr: "صناعة عطور يدوية فاخرة في الجزائر",

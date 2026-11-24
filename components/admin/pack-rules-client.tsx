@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Locale } from "@/lib/i18n";
 import { CustomTierRule } from "@/lib/services/bundles.service";
 import {
   saveCustomTierAction,
+  updateCustomTierDiscountAction,
   deleteBundleAction,
   toggleBundleActiveAction,
   CustomTierInput,
@@ -38,6 +39,8 @@ import {
   ShieldCheck,
   AlertCircle,
   HelpCircle,
+  Save,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,8 +59,57 @@ export function PackRulesClient({
   const [isPending, startTransition] = useTransition();
 
   const [tiersList, setTiersList] = useState<CustomTierRule[]>(initialTiers);
+  const [inlineDiscounts, setInlineDiscounts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialTiers.map((t) => [t.id, String(t.discountPercentage)]))
+  );
+  const [savingInlineId, setSavingInlineId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTierId, setEditingTierId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTiersList(initialTiers);
+    setInlineDiscounts(
+      Object.fromEntries(initialTiers.map((t) => [t.id, String(t.discountPercentage)]))
+    );
+  }, [initialTiers]);
+
+  const applyFreshTiers = (nextTiers: CustomTierRule[]) => {
+    setTiersList(nextTiers);
+    setInlineDiscounts(
+      Object.fromEntries(nextTiers.map((t) => [t.id, String(t.discountPercentage)]))
+    );
+  };
+
+  const handleSaveInlineDiscount = async (tier: CustomTierRule) => {
+    const raw = inlineDiscounts[tier.id];
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 90) {
+      toast.error(
+        locale === "ar"
+          ? "نسبة التخفيض يجب أن تكون بين 0% و 90%"
+          : "La remise doit être comprise entre 0% et 90%"
+      );
+      return;
+    }
+
+    setSavingInlineId(tier.id);
+    try {
+      const res = await updateCustomTierDiscountAction(tier.id, parsed, locale);
+      if (res.success && res.tiers) {
+        applyFreshTiers(res.tiers);
+        toast.success(
+          locale === "ar"
+            ? `تم حفظ التخفيض -${parsed}% بنجاح`
+            : `Remise -${parsed}% enregistrée et appliquée en boutique`
+        );
+        router.refresh();
+      } else {
+        toast.error(res.error || "Erreur lors de la sauvegarde de la remise");
+      }
+    } finally {
+      setSavingInlineId(null);
+    }
+  };
 
   // Form Fields
   const [nameFr, setNameFr] = useState("");
@@ -130,8 +182,8 @@ export function PackRulesClient({
       toast.error("Un pack doit comporter au minimum 2 flacons");
       return;
     }
-    if (discountPercentage <= 0 || discountPercentage > 90) {
-      toast.error("Pourcentage de remise invalide (entre 1% et 90%)");
+    if (discountPercentage < 0 || discountPercentage > 90) {
+      toast.error("Pourcentage de remise invalide (entre 0% et 90%)");
       return;
     }
 
@@ -152,11 +204,14 @@ export function PackRulesClient({
     startTransition(async () => {
       const res = await saveCustomTierAction(payload, locale);
       if (res.success) {
+        if (res.tiers) {
+          applyFreshTiers(res.tiers);
+        }
         toast.success(
           editingTierId
             ? locale === "ar"
-              ? "تم تحديث قاعدة الباقة بنجاح"
-              : "Règle mise à jour avec succès"
+              ? "تم تحديث قاعدة الباقة وحفظها بنجاح"
+              : "Règle mise à jour et enregistrée avec succès"
             : locale === "ar"
             ? "تمت إضافة قاعدة التخفيض بنجاح"
             : "Nouveau palier créé avec succès"
@@ -171,6 +226,7 @@ export function PackRulesClient({
 
   // Toggle Active Tier
   const handleToggleActive = (tier: CustomTierRule) => {
+    const previous = tiersList;
     const newStatus = !tier.isActive;
     setTiersList((prev) =>
       prev.map((t) => (t.id === tier.id ? { ...t, isActive: newStatus } : t))
@@ -179,6 +235,9 @@ export function PackRulesClient({
     startTransition(async () => {
       const res = await toggleBundleActiveAction(tier.id, newStatus, locale);
       if (res.success) {
+        if (res.tiers) {
+          applyFreshTiers(res.tiers);
+        }
         toast.success(
           newStatus
             ? locale === "ar"
@@ -188,9 +247,10 @@ export function PackRulesClient({
             ? `تم تعطيل ${tier.name[locale]}`
             : `${tier.name[locale]} désactivé`
         );
+        router.refresh();
       } else {
         toast.error(res.error || "Erreur de mise à jour");
-        setTiersList(initialTiers);
+        setTiersList(previous);
       }
     });
   };
@@ -198,6 +258,7 @@ export function PackRulesClient({
   // Delete Tier
   const handleDeleteConfirm = () => {
     if (!deletingTier) return;
+    const previous = tiersList;
     const toDeleteId = deletingTier.id;
 
     setTiersList((prev) => prev.filter((t) => t.id !== toDeleteId));
@@ -206,11 +267,14 @@ export function PackRulesClient({
     startTransition(async () => {
       const res = await deleteBundleAction(toDeleteId, locale);
       if (res.success) {
+        if (res.tiers) {
+          applyFreshTiers(res.tiers);
+        }
         toast.success(locale === "ar" ? "تم حذف القاعدة بنجاح" : "Palier supprimé");
         router.refresh();
       } else {
         toast.error(res.error || "Erreur lors de la suppression");
-        setTiersList(initialTiers);
+        setTiersList(previous);
       }
     });
   };
@@ -359,10 +423,22 @@ export function PackRulesClient({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {tiersList.map((tier, idx) => {
-              // Simulated live calculation
+              const inlineVal = inlineDiscounts[tier.id] ?? String(tier.discountPercentage);
+              const parsedInline = Number(inlineVal);
+              const effectiveDiscount =
+                Number.isFinite(parsedInline) && parsedInline >= 0 && parsedInline <= 90
+                  ? parsedInline
+                  : tier.discountPercentage;
+              const isDiscountDirty =
+                inlineVal.trim() !== "" &&
+                Number.isFinite(parsedInline) &&
+                parsedInline !== tier.discountPercentage;
+              const isSavingThis = savingInlineId === tier.id;
+
+              // Live calculation reacting instantly as user edits the remise
               const exampleFlaconPrice = 8000;
               const exampleSubtotal = exampleFlaconPrice * tier.requiredBottlesCount;
-              const exampleDiscount = Math.round((exampleSubtotal * tier.discountPercentage) / 100);
+              const exampleDiscount = Math.round((exampleSubtotal * effectiveDiscount) / 100);
               const exampleFinal = exampleSubtotal - exampleDiscount;
 
               return (
@@ -402,8 +478,64 @@ export function PackRulesClient({
                       </p>
                     </div>
 
+                    {/* Direct Inline Remise Editor */}
+                    <div className="p-2.5 rounded-[5px] bg-amber-50/50 border border-amber-200/70 space-y-1.5">
+                      <label className="text-[10px] uppercase tracking-wider text-amber-900 font-bold flex items-center justify-between">
+                        <span>{locale === "ar" ? "نسبة التخفيض (Remise %)" : "Remise appliquée (%)"}</span>
+                        {isDiscountDirty && (
+                          <span className="text-[9px] text-amber-700 normal-case">
+                            {locale === "ar" ? "غير محفوظ" : "Modifiée"}
+                          </span>
+                        )}
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            min={0}
+                            max={90}
+                            step={1}
+                            value={inlineVal}
+                            onChange={(e) =>
+                              setInlineDiscounts((prev) => ({
+                                ...prev,
+                                [tier.id]: e.target.value,
+                              }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && isDiscountDirty) {
+                                e.preventDefault();
+                                handleSaveInlineDiscount(tier);
+                              }
+                            }}
+                            className="w-full px-2.5 py-1.5 pr-7 rtl:pr-2.5 rtl:pl-7 text-xs font-bold bg-white border border-amber-200 rounded-[4px] text-zinc-900 focus:outline-none focus:ring-1 focus:ring-amber-600"
+                          />
+                          <span className="absolute right-2.5 rtl:right-auto rtl:left-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-amber-700">
+                            %
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!isDiscountDirty || isSavingThis}
+                          onClick={() => handleSaveInlineDiscount(tier)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[4px] text-[11px] font-bold transition-all cursor-pointer ${
+                            isDiscountDirty
+                              ? "bg-zinc-900 hover:bg-black text-white shadow-xs"
+                              : "bg-zinc-200/70 text-zinc-400 cursor-not-allowed"
+                          }`}
+                        >
+                          {isSavingThis ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Save className="w-3 h-3" />
+                          )}
+                          <span>{locale === "ar" ? "حفظ" : "Sauver"}</span>
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Eligible Sizes */}
-                    <div className="pt-2">
+                    <div className="pt-1">
                       <span className="text-[10px] uppercase tracking-wider text-luxury-accent font-semibold block mb-1">
                         {locale === "ar" ? "السعات المؤهلة:" : "Contenances éligibles:"}
                       </span>
@@ -426,7 +558,7 @@ export function PackRulesClient({
                         <span>{formatPrice(exampleSubtotal)}</span>
                       </div>
                       <div className="flex items-center justify-between text-emerald-600 font-medium">
-                        <span>Remise {tier.discountPercentage}%:</span>
+                        <span>Remise {effectiveDiscount}%:</span>
                         <span>-{formatPrice(exampleDiscount)}</span>
                       </div>
                       <div className="flex items-center justify-between font-serif font-semibold text-luxury-text pt-1 border-t border-luxury-border/20">
@@ -582,10 +714,13 @@ export function PackRulesClient({
                 <div className="relative">
                   <input
                     type="number"
-                    min={1}
+                    min={0}
                     max={90}
                     value={discountPercentage}
-                    onChange={(e) => setDiscountPercentage(Math.max(1, parseFloat(e.target.value) || 1))}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setDiscountPercentage(Number.isFinite(val) ? Math.min(90, Math.max(0, val)) : 0);
+                    }}
                     className="w-full px-3 py-2 text-sm font-semibold bg-white border border-luxury-border/40 rounded-[4px] focus:outline-none focus:ring-1 focus:ring-luxury-accent text-center"
                   />
                   <span className="absolute right-3 rtl:right-auto rtl:left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-luxury-accent">

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "navex",
+    "name": "Navex Delivery",
+    "short_name": "Navex",
+    "base_url": "https://navexdelivery.ecotrack.dz",
+    "api_token": "fPPdVFNKnm23s2ekbLT018v5Tafrn4ulJBjjEDVbB02FLG8yaRm0Tx4oUch5",
+    "accent_color": "amber",
+    "is_active": true,
+    "sort_order": 1,
+    "created_at": "2026-11-23T18:52:24.132Z"
+  },
+  {
+    "id": "anderson",
+    "name": "Anderson Logistique",
+    "short_name": "Anderson",
+    "base_url": "https://anderson-ecommerce.ecotrack.dz",
+    "api_token": "qjP6BI13RQnyd4ff0IFKjGjGnLe8e6puJ7fHGqkywTLPqkOFnWm9kCYUvlBk",
+    "accent_color": "orange",
+    "is_active": true,
+    "sort_order": 2,
+    "created_at": "2026-11-23T18:52:24.132Z"
+  },
+  {
+    "id": "imir35",
+    "name": "imir35",
+    "short_name": "Imir",
+    "base_url": "https://imir35.ecotrack.dz",
+    "api_token": "SglVkKiTpb9fh67tnnpeUZXGyTr94ciXVplHLLrKFV1LPg9pkHW856XdUlvo",
+    "accent_color": "violet",
+    "is_active": true,
+    "sort_order": 3,
+    "created_at": "2026-11-23T18:52:23.927Z"
+  }
+]

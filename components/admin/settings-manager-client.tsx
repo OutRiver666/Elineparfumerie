@@ -3,11 +3,20 @@
 import React, { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Locale } from "@/lib/i18n";
-import { StoreSettings, WilayaDeliveryRateRecord } from "@/types/settings";
+import {
+  DeliveryPricingMode,
+  DeliveryPricingTariffType,
+  StoreSettings,
+  WilayaDeliveryRateRecord,
+} from "@/types/settings";
+import { EcoTrackCarrierPublic } from "@/lib/shipping/carriers-types";
+import { CarriersManagerSection } from "@/components/admin/carriers-manager-section";
 import {
   saveAllSettingsAction,
   saveGeneralSettingsAction,
   saveWilayaRatesAction,
+  syncWilayaRatesFromCarrierAction,
+  setDeliveryPricingModeManualAction,
 } from "@/lib/actions/settings";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +38,10 @@ import {
   AlertCircle,
   Sparkles,
   RotateCcw,
+  RefreshCw,
+  Edit3,
+  Building2,
+  Home,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,12 +49,14 @@ interface SettingsManagerClientProps {
   locale: Locale;
   initialSettings: StoreSettings;
   initialWilayaRates: WilayaDeliveryRateRecord[];
+  initialCarriers: EcoTrackCarrierPublic[];
 }
 
 export function SettingsManagerClient({
   locale,
   initialSettings,
   initialWilayaRates,
+  initialCarriers,
 }: SettingsManagerClientProps) {
   const isAr = locale === "ar";
   const router = useRouter();
@@ -51,11 +66,32 @@ export function SettingsManagerClient({
   const [savedSettingsSnapshot, setSavedSettingsSnapshot] =
     useState<StoreSettings>(initialSettings);
 
-  // 58 Wilayas state
+  // 69 Wilayas state
   const [wilayaRates, setWilayaRates] =
     useState<WilayaDeliveryRateRecord[]>(initialWilayaRates);
   const [savedRatesSnapshot, setSavedRatesSnapshot] =
     useState<WilayaDeliveryRateRecord[]>(initialWilayaRates);
+
+  // Dynamic carriers list & Wilaya pricing source mode (Manual vs Follow EcoTrack Carrier)
+  const [carriers, setCarriers] = useState<EcoTrackCarrierPublic[]>(initialCarriers);
+  const activeCarriers = useMemo(() => {
+    const active = carriers.filter((c) => c.isActive);
+    return active.length > 0 ? active : carriers;
+  }, [carriers]);
+
+  const [pricingMode, setPricingMode] = useState<DeliveryPricingMode>(
+    initialSettings.deliveryPricingMode || "manual"
+  );
+  const [pricingCarrierId, setPricingCarrierId] = useState<string>(
+    initialSettings.deliveryPricingCarrierId || activeCarriers[0]?.id || "navex"
+  );
+  const [pricingTariffType, setPricingTariffType] = useState<DeliveryPricingTariffType>(
+    initialSettings.deliveryPricingTariffType || "home"
+  );
+  const [pricingSyncedAt, setPricingSyncedAt] = useState<string | null>(
+    initialSettings.deliveryPricingSyncedAt || null
+  );
+  const [isSyncingCarrierFees, setIsSyncingCarrierFees] = useState(false);
 
   // Search, filter & bulk edit
   const [searchQuery, setSearchQuery] = useState("");
@@ -153,6 +189,85 @@ export function SettingsManagerClient({
     setSettings(savedSettingsSnapshot);
     setWilayaRates(savedRatesSnapshot);
     setFeedback(null);
+  };
+
+  const handleSwitchToManualMode = async () => {
+    setPricingMode("manual");
+    setSettings((s) => ({ ...s, deliveryPricingMode: "manual" }));
+    const res = await setDeliveryPricingModeManualAction(locale);
+    if (res.success) {
+      setSavedSettingsSnapshot((s) => ({ ...s, deliveryPricingMode: "manual" }));
+      toast.success(
+        isAr
+          ? "تم التبديل إلى الوضع اليدوي لتعديل أسعار الولايات"
+          : "Mode Manuel activé : vous pouvez modifier librement chaque wilaya"
+      );
+    }
+  };
+
+  const handleSyncFromCarrier = async (overrideCarrierId?: string, overrideTariff?: DeliveryPricingTariffType) => {
+    const targetCarrier = overrideCarrierId || pricingCarrierId || activeCarriers[0]?.id;
+    const targetTariff = overrideTariff || pricingTariffType;
+    if (!targetCarrier) return;
+
+    setIsSyncingCarrierFees(true);
+    setFeedback(null);
+    try {
+      const res = await syncWilayaRatesFromCarrierAction(
+        { carrierId: targetCarrier, tariffType: targetTariff },
+        locale
+      );
+      if (res.success && res.wilayaRates) {
+        setWilayaRates(res.wilayaRates);
+        setSavedRatesSnapshot(res.wilayaRates);
+        setPricingMode("carrier");
+        setPricingCarrierId(targetCarrier);
+        setPricingTariffType(targetTariff);
+        setPricingSyncedAt(res.syncedAt || new Date().toISOString());
+        setSettings((s) => ({
+          ...s,
+          deliveryPricingMode: "carrier",
+          deliveryPricingCarrierId: targetCarrier,
+          deliveryPricingTariffType: targetTariff,
+          deliveryPricingSyncedAt: res.syncedAt || new Date().toISOString(),
+        }));
+        setSavedSettingsSnapshot((s) => ({
+          ...s,
+          deliveryPricingMode: "carrier",
+          deliveryPricingCarrierId: targetCarrier,
+          deliveryPricingTariffType: targetTariff,
+          deliveryPricingSyncedAt: res.syncedAt || new Date().toISOString(),
+        }));
+        const tariffLabel =
+          targetTariff === "stop_desk"
+            ? isAr
+              ? "مكتب (Stop Desk)"
+              : "Stop Desk"
+            : isAr
+            ? "للمنزل"
+            : "À domicile";
+        const msg = isAr
+          ? `✓ تم تحديث وحفظ أسعار ${res.updatedCount || res.wilayaRates.length} ولاية تلقائياً من ${res.carrierName} (${tariffLabel}).`
+          : `✓ Tarifs de ${res.updatedCount || res.wilayaRates.length} wilayas synchronisés et appliqués depuis ${res.carrierName} (${tariffLabel}).`;
+        setFeedback({ type: "success", text: msg });
+        toast.success(msg);
+        router.refresh();
+      } else {
+        const err =
+          res.error ||
+          (isAr
+            ? "تعذر مزامنة أسعار التوصيل من شركة الشحن."
+            : "Impossible de synchroniser les tarifs depuis ce transporteur.");
+        setFeedback({ type: "error", text: err });
+        toast.error(err);
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || "Erreur réseau";
+      setFeedback({ type: "error", text: errMsg });
+      toast.error(errMsg);
+    } finally {
+      setIsSyncingCarrierFees(false);
+    }
   };
 
   const handleSaveGeneral = () => {
@@ -500,6 +615,19 @@ export function SettingsManagerClient({
         </CardContent>
       </Card>
 
+      {/* EcoTrack Delivery Carriers Management */}
+      <CarriersManagerSection
+        locale={locale}
+        initialCarriers={initialCarriers}
+        onCarriersChange={(next) => {
+          setCarriers(next);
+          const active = next.filter((c) => c.isActive);
+          if (active.length > 0 && !active.some((c) => c.id === pricingCarrierId)) {
+            setPricingCarrierId(active[0].id);
+          }
+        }}
+      />
+
       {/* Wilaya Delivery Rates Card */}
       <Card className="border-zinc-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02),0_6px_24px_rgba(0,0,0,0.03)]">
         <CardHeader className="space-y-3 p-4 sm:p-5 pb-4 border-b border-zinc-100">
@@ -529,6 +657,135 @@ export function SettingsManagerClient({
                 </span>
               )}
             </div>
+          </div>
+
+          {/* Pricing Source Mode Selector: Manual vs Follow EcoTrack Carrier */}
+          <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/70 p-3 space-y-2.5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+              {/* Mode Segmented Buttons */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider">
+                  {isAr ? "مصدر الأسعار :" : "Mode de tarification :"}
+                </span>
+                <div className="inline-flex items-center rounded-lg p-1 bg-zinc-200/70 border border-zinc-200 gap-1">
+                  <button
+                    type="button"
+                    onClick={handleSwitchToManualMode}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                      pricingMode === "manual"
+                        ? "bg-zinc-900 text-white shadow-xs"
+                        : "text-zinc-600 hover:text-zinc-900"
+                    }`}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>{isAr ? "يدوي (Manuel)" : "Manuel"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPricingMode("carrier")}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                      pricingMode === "carrier"
+                        ? "bg-amber-600 text-white shadow-xs"
+                        : "text-zinc-600 hover:text-zinc-900"
+                    }`}
+                  >
+                    <Truck className="w-3.5 h-3.5" />
+                    <span>
+                      {isAr ? "تلقائي حسب شركة التوصيل" : "Suivre un transporteur EcoTrack"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {pricingMode === "carrier" && pricingSyncedAt && (
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-full self-start lg:self-auto">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>
+                    {isAr ? "آخر مزامنة :" : "Synchronisé :"}{" "}
+                    {carriers.find((c) => c.id === pricingCarrierId)?.shortName || pricingCarrierId}{" "}
+                    ({pricingTariffType === "stop_desk" ? "Stop Desk" : isAr ? "للمنزل" : "Domicile"}) •{" "}
+                    {new Date(pricingSyncedAt).toLocaleTimeString(
+                      isAr ? "ar-DZ" : "fr-DZ",
+                      { hour: "2-digit", minute: "2-digit" }
+                    )}
+                  </span>
+                </span>
+              )}
+            </div>
+
+            {pricingMode === "carrier" && (
+              <div className="flex flex-col md:flex-row md:items-center gap-2.5 pt-2 border-t border-zinc-200/70">
+                {/* Carrier Picker */}
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <label className="text-[11px] font-semibold text-zinc-600 whitespace-nowrap">
+                    {isAr ? "شركة التوصيل :" : "Transporteur :"}
+                  </label>
+                  <select
+                    value={pricingCarrierId}
+                    onChange={(e) => setPricingCarrierId(e.target.value)}
+                    className="flex-1 min-w-[160px] max-w-xs px-3 py-1.5 border border-zinc-200 rounded-lg text-xs font-bold text-zinc-900 bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                  >
+                    {activeCarriers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.baseUrl.replace(/^https?:\/\//i, "")})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Home vs Stop Desk Tariff Switch */}
+                <div className="inline-flex items-center rounded-lg p-0.5 bg-white border border-zinc-200 self-start md:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setPricingTariffType("home")}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                      pricingTariffType === "home"
+                        ? "bg-zinc-900 text-white"
+                        : "text-zinc-600 hover:text-zinc-900"
+                    }`}
+                  >
+                    <Home className="w-3 h-3" />
+                    <span>{isAr ? "للمنزل" : "À domicile"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPricingTariffType("stop_desk")}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                      pricingTariffType === "stop_desk"
+                        ? "bg-zinc-900 text-white"
+                        : "text-zinc-600 hover:text-zinc-900"
+                    }`}
+                  >
+                    <Building2 className="w-3 h-3" />
+                    <span>{isAr ? "المكتب (Stop Desk)" : "Stop Desk"}</span>
+                  </button>
+                </div>
+
+                {/* Sync & Apply Action */}
+                <Button
+                  type="button"
+                  disabled={isSyncingCarrierFees || activeCarriers.length === 0}
+                  onClick={() => handleSyncFromCarrier()}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold h-8 px-3.5 rounded-lg gap-1.5 cursor-pointer shrink-0 shadow-xs"
+                >
+                  {isSyncingCarrierFees ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>{isAr ? "جاري الجلب والحفظ..." : "Synchronisation..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>
+                        {isAr
+                          ? `جلب وتطبيق الأسعار (${wilayaRates.length} ولاية)`
+                          : `Synchroniser & Appliquer (${wilayaRates.length} wilayas)`}
+                      </span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Search, Status Filter & Bulk Update Bar */}

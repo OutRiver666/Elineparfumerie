@@ -91,8 +91,8 @@ export async function getBundleBySlug(slug: string): Promise<BundleItem | null> 
 
 export async function getCustomTiers(): Promise<CustomTierRule[]> {
   try {
-    const supabase = await createServerSupabaseClient();
-    const { data, error } = await (supabase.from("bundles") as any)
+    const admin = createAdminClient();
+    const { data, error } = await (admin.from("bundles") as any)
       .select("*")
       .eq("type", "custom")
       .eq("is_active", true)
@@ -106,12 +106,15 @@ export async function getCustomTiers(): Promise<CustomTierRule[]> {
       id: b.id,
       slug: b.slug,
       name: { fr: b.name_fr, ar: b.name_ar },
-      description: { fr: b.description_fr, ar: b.description_ar },
-      requiredBottlesCount: b.required_bottles_count || 3,
-      discountPercentage: Number(b.discount_percentage || 0),
-      allowedSizes: b.allowed_sizes || ["25ml", "30ml", "50ml", "80ml", "100ml"],
+      description: { fr: b.description_fr || "", ar: b.description_ar || "" },
+      requiredBottlesCount: Number(b.required_bottles_count || 3),
+      discountPercentage: Number(b.discount_percentage ?? 0),
+      allowedSizes:
+        Array.isArray(b.allowed_sizes) && b.allowed_sizes.length > 0
+          ? b.allowed_sizes
+          : ["25ml", "30ml", "50ml", "80ml", "100ml"],
       images: b.images || [],
-      isActive: b.is_active,
+      isActive: Boolean(b.is_active),
     }));
   } catch {
     return [];
@@ -149,12 +152,15 @@ export async function getAdminCustomRules(): Promise<CustomTierRule[]> {
       id: b.id,
       slug: b.slug,
       name: { fr: b.name_fr, ar: b.name_ar },
-      description: { fr: b.description_fr, ar: b.description_ar },
-      requiredBottlesCount: b.required_bottles_count || 3,
-      discountPercentage: Number(b.discount_percentage || 0),
-      allowedSizes: b.allowed_sizes || ["25ml", "30ml", "50ml", "80ml", "100ml"],
+      description: { fr: b.description_fr || "", ar: b.description_ar || "" },
+      requiredBottlesCount: Number(b.required_bottles_count || 3),
+      discountPercentage: Number(b.discount_percentage ?? 0),
+      allowedSizes:
+        Array.isArray(b.allowed_sizes) && b.allowed_sizes.length > 0
+          ? b.allowed_sizes
+          : ["25ml", "30ml", "50ml", "80ml", "100ml"],
       images: b.images || [],
-      isActive: b.is_active,
+      isActive: Boolean(b.is_active),
     }));
   } catch (err) {
     console.error("Error fetching admin custom rules:", err);

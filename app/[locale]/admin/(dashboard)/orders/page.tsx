@@ -2,6 +2,7 @@ import React from "react";
 import { cookies } from "next/headers";
 import { Locale } from "@/lib/i18n";
 import { getOrders } from "@/lib/services/orders.service";
+import { getAllCarriersPublic } from "@/lib/services/carriers.service";
 import { OrdersManagerClient } from "@/components/admin/orders-manager-client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getEffectiveAdminPermissions } from "@/lib/services/team.service";
@@ -40,7 +41,7 @@ export default async function AdminOrdersPage({ params }: AdminOrdersPageProps) 
     );
   }
 
-  const orders = await getOrders();
+  const [orders, carriers] = await Promise.all([getOrders(), getAllCarriersPublic()]);
 
   return (
     <div className="space-y-6 font-outfit">
@@ -72,7 +73,7 @@ export default async function AdminOrdersPage({ params }: AdminOrdersPageProps) 
       </div>
 
       {/* Interactive Orders Pipeline & List */}
-      <OrdersManagerClient initialOrders={orders} locale={locale} />
+      <OrdersManagerClient initialOrders={orders} carriers={carriers} locale={locale} />
     </div>
   );
 }

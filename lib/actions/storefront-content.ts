@@ -8,9 +8,14 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { StorefrontContent } from "@/types/storefront-content";
 import {
+  getStorefrontContent,
   saveStorefrontContent,
   resetStorefrontContentToDefault,
 } from "@/lib/services/storefront-content.service";
+import {
+  StorefrontThemeId,
+  resolveStorefrontThemeId,
+} from "@/lib/themes/storefront-themes";
 
 export async function uploadStorefrontImageAction(
   formData: FormData,
@@ -100,10 +105,13 @@ export async function updateStorefrontContentAction(
     }
 
     // Revalidate storefront pages immediately across locales
+    revalidatePath("/fr", "layout");
+    revalidatePath("/ar", "layout");
     revalidatePath("/fr");
     revalidatePath("/ar");
     revalidatePath(`/${locale}`);
-    revalidatePath(`/${locale}/admin/ui-controller`);
+    revalidatePath("/fr/admin/ui-controller");
+    revalidatePath("/ar/admin/ui-controller");
 
     return { success: true };
   } catch (error: any) {
@@ -111,6 +119,41 @@ export async function updateStorefrontContentAction(
     return {
       success: false,
       error: error?.message || "Erreur lors de la sauvegarde du contenu de la vitrine.",
+    };
+  }
+}
+
+export async function setStorefrontThemeAction(
+  themeId: StorefrontThemeId,
+  locale: string = "fr"
+): Promise<{ success: boolean; themeId?: StorefrontThemeId; error?: string }> {
+  try {
+    await requireStaff(locale);
+
+    const safeThemeId = resolveStorefrontThemeId(themeId);
+    const current = await getStorefrontContent();
+    const result = await saveStorefrontContent({
+      ...current,
+      themeId: safeThemeId,
+    });
+
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+
+    revalidatePath("/fr", "layout");
+    revalidatePath("/ar", "layout");
+    revalidatePath("/fr");
+    revalidatePath("/ar");
+    revalidatePath("/fr/admin/ui-controller");
+    revalidatePath("/ar/admin/ui-controller");
+
+    return { success: true, themeId: safeThemeId };
+  } catch (error: any) {
+    console.error("[setStorefrontThemeAction] Error:", error);
+    return {
+      success: false,
+      error: error?.message || "Erreur lors du changement de thème.",
     };
   }
 }

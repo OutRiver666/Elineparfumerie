@@ -8,6 +8,7 @@ import {
   getStoreSettings,
   getWilayaDeliveryRates,
 } from "@/lib/services/settings.service";
+import { getAllCarriersPublic } from "@/lib/services/carriers.service";
 import { SettingsManagerClient } from "@/components/admin/settings-manager-client";
 
 export const dynamic = "force-dynamic";
@@ -41,9 +42,10 @@ export default async function AdminSettingsPage({ params }: AdminSettingsPagePro
     );
   }
 
-  const [settings, wilayaRates] = await Promise.all([
+  const [settings, wilayaRates, carriers] = await Promise.all([
     getStoreSettings(),
     getWilayaDeliveryRates(),
+    getAllCarriersPublic(),
   ]);
 
   return (
@@ -51,6 +53,7 @@ export default async function AdminSettingsPage({ params }: AdminSettingsPagePro
       locale={locale}
       initialSettings={settings}
       initialWilayaRates={wilayaRates}
+      initialCarriers={carriers}
     />
   );
 }

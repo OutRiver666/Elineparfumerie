@@ -55,6 +55,7 @@ export async function getStoreSettings(): Promise<StoreSettings> {
       .maybeSingle();
 
     if (!error && data) {
+      const local = readLocalSettingsFallback();
       return {
         brandName: data.brand_name || DEFAULT_STORE_SETTINGS.brandName,
         contactPhone: data.contact_phone || DEFAULT_STORE_SETTINGS.contactPhone,
@@ -65,6 +66,14 @@ export async function getStoreSettings(): Promise<StoreSettings> {
         pack3DiscountPct: Number(data.pack_3_discount_pct ?? DEFAULT_STORE_SETTINGS.pack3DiscountPct),
         pack5DiscountPct: Number(data.pack_5_discount_pct ?? DEFAULT_STORE_SETTINGS.pack5DiscountPct),
         pack10DiscountPct: Number(data.pack_10_discount_pct ?? DEFAULT_STORE_SETTINGS.pack10DiscountPct),
+        deliveryPricingMode:
+          data.delivery_pricing_mode || local.deliveryPricingMode || "manual",
+        deliveryPricingCarrierId:
+          data.delivery_pricing_carrier_id ?? local.deliveryPricingCarrierId ?? null,
+        deliveryPricingTariffType:
+          data.delivery_pricing_tariff_type || local.deliveryPricingTariffType || "home",
+        deliveryPricingSyncedAt:
+          data.delivery_pricing_synced_at ?? local.deliveryPricingSyncedAt ?? null,
         updatedAt: data.updated_at || undefined,
       };
     }
@@ -83,6 +92,7 @@ export async function saveStoreSettings(
   settings: StoreSettings
 ): Promise<{ success: boolean; persistedToDb: boolean; error?: string }> {
   const now = new Date().toISOString();
+  const existingLocal = readLocalSettingsFallback();
   const clean: StoreSettings = {
     brandName: settings.brandName.trim() || DEFAULT_STORE_SETTINGS.brandName,
     contactPhone: settings.contactPhone.trim() || DEFAULT_STORE_SETTINGS.contactPhone,
@@ -93,6 +103,18 @@ export async function saveStoreSettings(
     pack3DiscountPct: Math.min(90, Math.max(0, Number(settings.pack3DiscountPct) || 0)),
     pack5DiscountPct: Math.min(90, Math.max(0, Number(settings.pack5DiscountPct) || 0)),
     pack10DiscountPct: Math.min(90, Math.max(0, Number(settings.pack10DiscountPct) || 0)),
+    deliveryPricingMode:
+      settings.deliveryPricingMode || existingLocal.deliveryPricingMode || "manual",
+    deliveryPricingCarrierId:
+      settings.deliveryPricingCarrierId !== undefined
+        ? settings.deliveryPricingCarrierId
+        : existingLocal.deliveryPricingCarrierId ?? null,
+    deliveryPricingTariffType:
+      settings.deliveryPricingTariffType || existingLocal.deliveryPricingTariffType || "home",
+    deliveryPricingSyncedAt:
+      settings.deliveryPricingSyncedAt !== undefined
+        ? settings.deliveryPricingSyncedAt
+        : existingLocal.deliveryPricingSyncedAt ?? null,
     updatedAt: now,
   };
 
@@ -100,22 +122,38 @@ export async function saveStoreSettings(
 
   try {
     const admin = createAdminClient();
-    const { error } = await (admin.from("store_settings") as any).upsert(
+    const baseRow = {
+      id: "default",
+      brand_name: clean.brandName,
+      contact_phone: clean.contactPhone,
+      support_email: clean.supportEmail,
+      address_fr: clean.addressFr,
+      address_ar: clean.addressAr,
+      currency: clean.currency,
+      pack_3_discount_pct: clean.pack3DiscountPct,
+      pack_5_discount_pct: clean.pack5DiscountPct,
+      pack_10_discount_pct: clean.pack10DiscountPct,
+      updated_at: now,
+    };
+
+    let { error } = await (admin.from("store_settings") as any).upsert(
       {
-        id: "default",
-        brand_name: clean.brandName,
-        contact_phone: clean.contactPhone,
-        support_email: clean.supportEmail,
-        address_fr: clean.addressFr,
-        address_ar: clean.addressAr,
-        currency: clean.currency,
-        pack_3_discount_pct: clean.pack3DiscountPct,
-        pack_5_discount_pct: clean.pack5DiscountPct,
-        pack_10_discount_pct: clean.pack10DiscountPct,
-        updated_at: now,
+        ...baseRow,
+        delivery_pricing_mode: clean.deliveryPricingMode,
+        delivery_pricing_carrier_id: clean.deliveryPricingCarrierId,
+        delivery_pricing_tariff_type: clean.deliveryPricingTariffType,
+        delivery_pricing_synced_at: clean.deliveryPricingSyncedAt,
       },
       { onConflict: "id" }
     );
+
+    // Fallback if optional delivery_pricing_* columns don't exist yet on store_settings
+    if (error && (error.code === "42703" || error.message?.includes("delivery_pricing"))) {
+      const retry = await (admin.from("store_settings") as any).upsert(baseRow, {
+        onConflict: "id",
+      });
+      error = retry.error;
+    }
 
     if (!error) {
       persistedToDb = true;

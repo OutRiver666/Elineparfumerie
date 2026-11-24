@@ -4,16 +4,28 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import {
   createEcoTrackShipment,
-  getEcoTrackLabelUrl,
+  buildEcoTrackLabelUrl,
   getEcoTrackTrackingInfo,
+  fetchEcoTrackBulkStatuses,
   deleteEcoTrackShipment,
   mapEcoTrackStatusToOrder,
   ShippingCarrierId,
-  getCarrierConfig,
+  resolveCarrierConfig,
   resolveEcoTrackCommune,
 } from "@/lib/services/ecotrack.service";
+import { getOrders, AdminOrder } from "@/lib/services/orders.service";
 import { getEcoTrackWilayaCode } from "@/lib/data/algeria-locations";
 import { requireAdminPermission } from "@/lib/security/auth-guard";
+
+function upsertShippingStatusInNotes(
+  existingNotes: string | null | undefined,
+  shippingStatus: string,
+  syncedAt: string
+): string {
+  const cleaned = (existingNotes || "").replace(/\[SHIP_STATUS:[^\]]+\]/gi, "").trim();
+  const tag = `[SHIP_STATUS:${shippingStatus}:${syncedAt}]`;
+  return cleaned ? `${cleaned} ${tag}` : tag;
+}
 
 /**
  * Dispatches an order to Navex Delivery or Anderson Logistique (EcoTrack)
@@ -26,7 +38,7 @@ export async function sendOrderToEcoTrackAction(
     await requireAdminPermission("orders_manage");
     const supabase = createAdminClient();
     const carrierId: ShippingCarrierId = options?.carrier || "navex";
-    const carrier = getCarrierConfig(carrierId);
+    const carrier = await resolveCarrierConfig(carrierId);
 
     // 1. Fetch order and item snapshots
     const { data: order, error } = await (supabase.from("orders") as any)
@@ -98,17 +110,18 @@ export async function sendOrderToEcoTrackAction(
     }
 
     const trackingNumber = res.tracking;
-    const labelUrl = getEcoTrackLabelUrl(trackingNumber, carrierId);
+    const labelUrl = buildEcoTrackLabelUrl(trackingNumber, carrier.baseUrl, carrier.token);
 
     // 5. Update Order in Supabase (including canonical commune if it was corrected)
+    const syncedAt = new Date().toISOString();
     const updatePayload: any = {
       status: "shipped",
       tracking_number: trackingNumber,
       shipping_provider: carrier.name,
       shipping_label_url: labelUrl,
-      shipping_status: "order_information_received_by_carrier",
-      shipping_synced_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      shipping_status: "prete_a_expedier",
+      shipping_synced_at: syncedAt,
+      updated_at: syncedAt,
     };
     if (res.resolvedCommune && order.commune_name !== res.resolvedCommune) {
       updatePayload.commune_name = res.resolvedCommune;
@@ -119,14 +132,17 @@ export async function sendOrderToEcoTrackAction(
       .eq("id", orderId);
 
     if (updateErr) {
-      // Fallback: Embed structured token with carrier id into delivery_notes
-      const cleanNotes = (order.delivery_notes || "").replace(/\[ECOTRACK:[^\]]+\]/g, "").trim();
-      const updatedNotes = `${cleanNotes} [ECOTRACK:${carrierId}:${trackingNumber}]`.trim();
+      // Fallback: Embed structured token with carrier id and status into delivery_notes
+      const cleanNotes = (order.delivery_notes || "")
+        .replace(/\[ECOTRACK:[^\]]+\]/gi, "")
+        .replace(/\[SHIP_STATUS:[^\]]+\]/gi, "")
+        .trim();
+      const updatedNotes = `${cleanNotes} [ECOTRACK:${carrierId}:${trackingNumber}] [SHIP_STATUS:prete_a_expedier:${syncedAt}]`.trim();
       await (supabase.from("orders") as any)
         .update({
           status: "shipped",
           delivery_notes: updatedNotes,
-          updated_at: new Date().toISOString(),
+          updated_at: syncedAt,
         })
         .eq("id", orderId);
     }
@@ -156,6 +172,8 @@ export async function sendOrderToEcoTrackAction(
       carrier: carrier.id,
       carrierName: carrier.name,
       resolvedCommune,
+      shippingStatus: "prete_a_expedier",
+      shippingSyncedAt: syncedAt,
       portalUrl: `${carrier.portalUrl}${trackingNumber}`,
     };
   } catch (err: any) {
@@ -181,14 +199,15 @@ export async function syncEcoTrackStatusAction(
       return { success: false, error: "Numéro de suivi manquant" };
     }
 
-    const carrier = getCarrierConfig(carrierId || "navex");
+    const carrier = await resolveCarrierConfig(carrierId || "navex");
     const info = await getEcoTrackTrackingInfo(tracking, carrier.id);
     if (!info.success) {
       return { success: false, error: info.error || `Impossible de contacter ${carrier.name}` };
     }
 
-    const latestStatus = info.latestStatus || "registered";
+    const latestStatus = info.latestStatus || "prete_a_expedier";
     const mapping = mapEcoTrackStatusToOrder(latestStatus);
+    const syncedAt = new Date().toISOString();
 
     const supabase = createAdminClient();
 
@@ -196,8 +215,8 @@ export async function syncEcoTrackStatusAction(
     const updates: any = {
       status: mapping.internalStatus,
       shipping_status: latestStatus,
-      shipping_synced_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      shipping_synced_at: syncedAt,
+      updated_at: syncedAt,
     };
 
     if (mapping.isPaid) {
@@ -209,12 +228,22 @@ export async function syncEcoTrackStatusAction(
       .eq("id", orderId);
 
     if (updateErr) {
-      // Fallback without extra schema columns
+      // Fallback without extra schema columns: store live shipping status tag inside delivery_notes
+      const { data: existingRow } = await (supabase.from("orders") as any)
+        .select("delivery_notes")
+        .eq("id", orderId)
+        .maybeSingle();
+
       await (supabase.from("orders") as any)
         .update({
           status: mapping.internalStatus,
           ...(mapping.isPaid ? { is_paid: true } : {}),
-          updated_at: new Date().toISOString(),
+          delivery_notes: upsertShippingStatusInNotes(
+            existingRow?.delivery_notes,
+            latestStatus,
+            syncedAt
+          ),
+          updated_at: syncedAt,
         })
         .eq("id", orderId);
     }
@@ -227,10 +256,12 @@ export async function syncEcoTrackStatusAction(
     return {
       success: true,
       latestStatus,
+      stageKey: mapping.stageKey,
       labelFr: mapping.labelFr,
       labelAr: mapping.labelAr,
       internalStatus: mapping.internalStatus,
       isPaid: mapping.isPaid,
+      syncedAt,
       activity: info.activity || [],
       carrierName: carrier.name,
     };
@@ -253,7 +284,7 @@ export async function cancelEcoTrackShipmentAction(
       return { success: false, error: "Numéro de suivi manquant" };
     }
 
-    const carrier = getCarrierConfig(carrierId || "navex");
+    const carrier = await resolveCarrierConfig(carrierId || "navex");
     const delRes = await deleteEcoTrackShipment(tracking, carrier.id);
     if (!delRes.success) {
       return { success: false, error: delRes.error || `Échec d'annulation chez ${carrier.name}` };
@@ -281,7 +312,8 @@ export async function cancelEcoTrackShipmentAction(
         .single();
 
       const cleanNotes = (order?.delivery_notes || "")
-        .replace(/\[ECOTRACK:[^\]]+\]/g, "")
+        .replace(/\[ECOTRACK:[^\]]+\]/gi, "")
+        .replace(/\[SHIP_STATUS:[^\]]+\]/gi, "")
         .trim();
 
       await (supabase.from("orders") as any)
@@ -302,5 +334,182 @@ export async function cancelEcoTrackShipmentAction(
   } catch (err: any) {
     console.error("[cancelEcoTrackShipmentAction] Error:", err);
     return { success: false, error: err?.message || "Erreur inattendue" };
+  }
+}
+
+/**
+ * Automatically synchronizes all orders dispatched from this dashboard
+ * across both Navex Delivery and Anderson Logistique (EcoTrack).
+ */
+export async function syncAllEcoTrackOrdersAction(options?: {
+  carrier?: "all" | ShippingCarrierId;
+  force?: boolean;
+}): Promise<{
+  success: boolean;
+  checkedCount: number;
+  updatedCount: number;
+  syncedAt: string;
+  orders?: AdminOrder[];
+  error?: string;
+}> {
+  const syncedAt = new Date().toISOString();
+  try {
+    await requireAdminPermission("orders_view");
+
+    const allOrders = await getOrders();
+    const targetCarrier = options?.carrier || "all";
+    const force = Boolean(options?.force);
+
+    // Filter to orders dispatched from this dashboard (having a tracking code)
+    const dispatched = allOrders.filter((o) => {
+      if (!o.trackingCode) return false;
+
+      const carrierId: ShippingCarrierId =
+        o.shippingCarrier ||
+        (o.deliveryService?.toLowerCase().includes("anderson") ? "anderson" : "navex");
+
+      if (targetCarrier !== "all" && carrierId !== targetCarrier) {
+        return false;
+      }
+
+      if (force) return true;
+
+      // In automatic background sync: always sync active shipments, unpaid delivered parcels,
+      // or any dispatched order that has never been synced yet.
+      const isFinalized =
+        (o.status === "delivered" && o.isPaid && Boolean(o.shippingStatus)) ||
+        ((o.status === "returned" || o.status === "cancelled") && Boolean(o.shippingStatus));
+
+      return !isFinalized;
+    });
+
+    if (dispatched.length === 0) {
+      return {
+        success: true,
+        checkedCount: 0,
+        updatedCount: 0,
+        syncedAt,
+        orders: allOrders,
+      };
+    }
+
+    // Group dispatched orders dynamically by any EcoTrack carrier ID
+    const ordersByCarrier = new Map<string, AdminOrder[]>();
+    for (const o of dispatched) {
+      const carrierId: ShippingCarrierId = o.shippingCarrier || "navex";
+      const list = ordersByCarrier.get(carrierId) || [];
+      list.push(o);
+      ordersByCarrier.set(carrierId, list);
+    }
+
+    // Fetch live statuses from ALL active EcoTrack carriers in parallel
+    const carrierEntries = Array.from(ordersByCarrier.entries());
+    const fetchedMaps = await Promise.all(
+      carrierEntries.map(async ([carrierId, list]) => {
+        const statusMap = await fetchEcoTrackBulkStatuses(
+          list.map((o) => o.trackingCode!).filter(Boolean),
+          carrierId
+        );
+        return { carrierId, list, statusMap };
+      })
+    );
+
+    const supabase = createAdminClient();
+    let updatedCount = 0;
+
+    const persistUpdates = async (
+      orderList: AdminOrder[],
+      statusMap: Record<string, string>
+    ) => {
+      const CONCURRENCY = 8;
+      for (let i = 0; i < orderList.length; i += CONCURRENCY) {
+        const batch = orderList.slice(i, i + CONCURRENCY);
+        await Promise.allSettled(
+          batch.map(async (order) => {
+            const trk = order.trackingCode;
+            if (!trk) return;
+            const liveRawStatus = statusMap[trk];
+            if (!liveRawStatus) return;
+
+            const mapping = mapEcoTrackStatusToOrder(liveRawStatus);
+            const nextIsPaid = order.isPaid || mapping.isPaid;
+
+            const statusChanged =
+              order.shippingStatus !== liveRawStatus ||
+              order.status !== mapping.internalStatus ||
+              order.isPaid !== nextIsPaid;
+
+            if (!statusChanged && order.shippingSyncedAt) {
+              return;
+            }
+
+            const updates: Record<string, any> = {
+              status: mapping.internalStatus,
+              shipping_status: liveRawStatus,
+              shipping_synced_at: syncedAt,
+              updated_at: syncedAt,
+            };
+
+            if (nextIsPaid) {
+              updates.is_paid = true;
+            }
+
+            const { error: updateErr } = await (supabase.from("orders") as any)
+              .update(updates)
+              .eq("id", order.id);
+
+            if (updateErr) {
+              // Fallback if shipping_status / shipping_synced_at columns are missing: persist in delivery_notes
+              await (supabase.from("orders") as any)
+                .update({
+                  status: mapping.internalStatus,
+                  ...(nextIsPaid ? { is_paid: true } : {}),
+                  delivery_notes: upsertShippingStatusInNotes(
+                    order.notes,
+                    liveRawStatus,
+                    syncedAt
+                  ),
+                  updated_at: syncedAt,
+                })
+                .eq("id", order.id);
+            }
+
+            if (statusChanged) {
+              updatedCount++;
+            }
+          })
+        );
+      }
+    };
+
+    await Promise.all(
+      fetchedMaps.map(({ list, statusMap }) => persistUpdates(list, statusMap))
+    );
+
+    const freshOrders = updatedCount > 0 ? await getOrders() : allOrders;
+
+    if (updatedCount > 0) {
+      revalidatePath("/[locale]/admin", "layout");
+      revalidatePath("/[locale]/admin/orders", "page");
+      revalidatePath("/[locale]/admin", "page");
+      revalidatePath("/[locale]/admin/sales", "page");
+    }
+
+    return {
+      success: true,
+      checkedCount: dispatched.length,
+      updatedCount,
+      syncedAt,
+      orders: freshOrders,
+    };
+  } catch (err: any) {
+    console.error("[syncAllEcoTrackOrdersAction] Error:", err);
+    return {
+      success: false,
+      checkedCount: 0,
+      updatedCount: 0,
+      syncedAt,
+      error: err?.message || "Erreur lors de la synchronisation automatique",
+    };
   }
 }

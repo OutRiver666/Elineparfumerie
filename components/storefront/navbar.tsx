@@ -7,14 +7,16 @@ import { Globe, ShieldCheck, Search, X } from "lucide-react";
 import { CartIconBadge } from "@/components/storefront/cart-icon-badge";
 import { NavbarSearch, NavbarSearchProduct } from "@/components/storefront/navbar-search";
 import { Locale, getDictionary } from "@/lib/i18n";
+import { StorefrontThemeId } from "@/lib/themes/storefront-themes";
 import { cn } from "@/lib/utils";
 
 interface NavbarProps {
   locale?: Locale;
   products?: NavbarSearchProduct[];
+  themeId?: StorefrontThemeId;
 }
 
-export function Navbar({ locale = "fr", products = [] }: NavbarProps) {
+export function Navbar({ locale = "fr", products = [], themeId = "atelier-ivoire" }: NavbarProps) {
   const pathname = usePathname() || "";
   const dict = getDictionary(locale);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -53,11 +55,33 @@ export function Navbar({ locale = "fr", products = [] }: NavbarProps) {
         />
       )}
 
-      <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md transition-all duration-200 border-b border-luxury-border/30">
+      <header className="sticky top-0 z-40 w-full header-glass transition-all duration-200 border-b border-luxury-border/40">
       {/* Top Luxury Announcement Bar */}
-      <div className="bg-luxury-secondary py-1.5 px-4 text-center text-[10.5px] sm:text-[11px] text-luxury-text-secondary tracking-wide border-b border-luxury-border/40">
+      <div
+        className={cn(
+          "py-1.5 px-4 text-center text-[10.5px] sm:text-[11px] tracking-wide border-b",
+          themeId === "azur-riviera"
+            ? "bg-[#0A1E3F] text-blue-100 border-sky-400/20"
+            : themeId === "emeraude-imperiale"
+            ? "bg-[#0C2A22] text-[#E9DFC9] border-[#C5A059]/30"
+            : themeId === "monochrome-editorial"
+            ? "bg-black text-white border-black font-mono uppercase tracking-[0.14em]"
+            : "bg-luxury-secondary text-luxury-text-secondary border-luxury-border/40"
+        )}
+      >
         <div className="container mx-auto flex items-center justify-center space-x-2 rtl:space-x-reverse">
-          <ShieldCheck className="w-3.5 h-3.5 text-luxury-accent inline-block shrink-0" />
+          <ShieldCheck
+            className={cn(
+              "w-3.5 h-3.5 inline-block shrink-0",
+              themeId === "azur-riviera"
+                ? "text-sky-400"
+                : themeId === "emeraude-imperiale"
+                ? "text-[#C5A059]"
+                : themeId === "monochrome-editorial"
+                ? "text-white"
+                : "text-luxury-accent"
+            )}
+          />
           <span className="sm:hidden">
             {locale === "ar"
               ? "توصيل إلى 58 ولاية • الدفع عند الاستلام"

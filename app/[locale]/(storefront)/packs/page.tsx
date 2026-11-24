@@ -1,10 +1,13 @@
 import React from "react";
 import Link from "next/link";
 import { Locale, getDictionary } from "@/lib/i18n";
-import { getBundles } from "@/lib/services/bundles.service";
+import { getBundles, getCustomTiers } from "@/lib/services/bundles.service";
 import { PackCard } from "@/components/storefront/pack-card";
 import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, Package } from "lucide-react";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 interface PacksPageProps {
   params: Promise<{ locale: string }>;
@@ -15,7 +18,19 @@ export default async function PacksPage({ params }: PacksPageProps) {
   const locale = (resolved.locale as Locale) || "fr";
   const dict = getDictionary(locale);
 
-  const bundles = await getBundles();
+  const [bundles, customTiers] = await Promise.all([
+    getBundles(),
+    getCustomTiers(),
+  ]);
+
+  const maxTierDiscount =
+    customTiers.length > 0
+      ? Math.max(...customTiers.map((t) => t.discountPercentage))
+      : 15;
+  const minTierBottles =
+    customTiers.length > 0
+      ? Math.min(...customTiers.map((t) => t.requiredBottlesCount))
+      : 3;
 
   return (
     <div className="container mx-auto px-4 sm:px-6 py-12 space-y-16">
@@ -46,9 +61,24 @@ export default async function PacksPage({ params }: PacksPageProps) {
           </h2>
           <p className="text-xs sm:text-sm text-luxury-text-secondary max-w-lg leading-relaxed">
             {locale === "ar"
-              ? "تحكم بالكامل في عطور باقتك: اختر 3 عطور من رغبتك وسعة القوارير واحصل على خصم 15% فوري."
-              : "Composez votre coffret de 3 parfums en toute liberté. Choisissez les fragrances et les formats exacts avec 15% de remise immédiate."}
+              ? `تحكم بالكامل في عطور باقتك: اختر ابتداءً من ${minTierBottles} عطور من رغبتك وسعة القوارير واحصل على تخفيض يصل إلى ${maxTierDiscount}% فوري.`
+              : `Composez votre coffret dès ${minTierBottles} parfums en toute liberté. Choisissez les fragrances et les formats exacts avec jusqu'à -${maxTierDiscount}% de remise immédiate.`}
           </p>
+          {customTiers.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {customTiers.map((t) => (
+                <span
+                  key={t.id}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[3px] bg-white border border-luxury-border/40 text-[11px] font-semibold text-luxury-text"
+                >
+                  <span>
+                    {t.requiredBottlesCount} {locale === "ar" ? "عطور" : "flacons"}
+                  </span>
+                  <span className="text-luxury-accent font-bold">-{t.discountPercentage}%</span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="text-center md:text-right rtl:md:text-left">
           <Link href={`/${locale}/packs/builder`}>

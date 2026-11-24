@@ -8,7 +8,6 @@ import {
   ShoppingBag,
   Package,
   Layers,
-  FlaskConical,
   Boxes,
   Tag,
   Settings,
@@ -132,23 +131,6 @@ export function AdminSidebar({
       ],
     },
     {
-      title: locale === "ar" ? "المخزون والورشة" : "Atelier & Stocks",
-      items: [
-        {
-          label: locale === "ar" ? "الزيوت والكحول والعبوات" : "Matières & Packaging",
-          href: `/${locale}/admin/inventory`,
-          icon: Boxes,
-          permissionKey: "inventory_production",
-        },
-        {
-          label: locale === "ar" ? "التركيب ودفعات الإنتاج" : "Formulations & Lots",
-          href: `/${locale}/admin/production`,
-          icon: FlaskConical,
-          permissionKey: "inventory_production",
-        },
-      ],
-    },
-    {
       title: locale === "ar" ? "تخصيص المتجر" : "Vitrine & Médias",
       items: [
         {
@@ -262,7 +244,7 @@ export function AdminSidebar({
                       <Icon
                         className={cn(
                           "h-4 w-4 shrink-0 transition-colors",
-                          isActive ? "text-amber-300" : "text-zinc-400 group-hover:text-zinc-600"
+                          isActive ? "text-white" : "text-zinc-400 group-hover:text-zinc-600"
                         )}
                       />
                       <span className="truncate">{item.label}</span>

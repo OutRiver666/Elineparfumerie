@@ -14,8 +14,21 @@ import { createClient } from "@/lib/supabase/client";
 import {
   sendOrderToEcoTrackAction,
   syncEcoTrackStatusAction,
+  syncAllEcoTrackOrdersAction,
   cancelEcoTrackShipmentAction,
 } from "@/lib/actions/shipping";
+import {
+  CARRIER_STAGES,
+  CARRIER_STAGE_MAP,
+  CARRIER_TRANSIT_STEPS,
+  CarrierStageKey,
+  normalizeEcoTrackStage,
+} from "@/lib/shipping/carrier-stages";
+import {
+  EcoTrackCarrierPublic,
+  getCarrierColorTheme,
+} from "@/lib/shipping/carriers-types";
+import Link from "next/link";
 import { formatPrice } from "@/lib/utils";
 import {
   Clock,
@@ -57,6 +70,7 @@ import { Card } from "@/components/ui/card";
 
 interface OrdersManagerClientProps {
   initialOrders: AdminOrder[];
+  carriers: EcoTrackCarrierPublic[];
   locale: Locale;
 }
 
@@ -158,10 +172,84 @@ function getPaginationRange(current: number, total: number): (number | string)[]
 
 export function OrdersManagerClient({
   initialOrders,
+  carriers,
   locale,
 }: OrdersManagerClientProps) {
+  const activeCarriers = carriers.filter((c) => c.isActive);
+  const dispatchCarriers = activeCarriers.length > 0 ? activeCarriers : carriers;
+  const defaultCarrierId = dispatchCarriers[0]?.id || "navex";
+
+  const findCarrierByIdOrOrder = (
+    carrierIdOrOrder: string | AdminOrder
+  ): {
+    id: string;
+    name: string;
+    shortName: string;
+    baseUrl: string;
+    portalUrl: string;
+    theme: ReturnType<typeof getCarrierColorTheme>;
+  } => {
+    const idNeedle =
+      typeof carrierIdOrOrder === "string"
+        ? carrierIdOrOrder.toLowerCase()
+        : (carrierIdOrOrder.shippingCarrier || "").toLowerCase();
+    const serviceNeedle =
+      typeof carrierIdOrOrder === "string"
+        ? carrierIdOrOrder.toLowerCase()
+        : (carrierIdOrOrder.deliveryService || "").toLowerCase();
+
+    const matched =
+      (idNeedle && carriers.find((c) => c.id.toLowerCase() === idNeedle)) ||
+      (serviceNeedle &&
+        carriers.find(
+          (c) =>
+            c.name.toLowerCase() === serviceNeedle ||
+            serviceNeedle.includes(c.id.toLowerCase()) ||
+            serviceNeedle.includes(c.shortName.toLowerCase())
+        )) ||
+      dispatchCarriers[0];
+
+    if (matched) {
+      return {
+        id: matched.id,
+        name: matched.name,
+        shortName: matched.shortName,
+        baseUrl: matched.baseUrl,
+        portalUrl: matched.portalUrl,
+        theme: getCarrierColorTheme(matched.accentColor),
+      };
+    }
+
+    const fallbackName =
+      typeof carrierIdOrOrder === "string"
+        ? carrierIdOrOrder
+        : carrierIdOrOrder.deliveryService || "Navex Delivery";
+    return {
+      id: idNeedle || "navex",
+      name: fallbackName,
+      shortName: fallbackName.split(/\s+/)[0] || "EcoTrack",
+      baseUrl: "https://navexdelivery.ecotrack.dz",
+      portalUrl: "https://navexdelivery.ecotrack.dz/tracking/info?tracking=",
+      theme: getCarrierColorTheme("amber"),
+    };
+  };
+
   const [orders, setOrders] = useState<AdminOrder[]>(initialOrders);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedCarrierFilter, setSelectedCarrierFilter] = useState<string>("all");
+  const [selectedCarrierStage, setSelectedCarrierStage] = useState<"all" | CarrierStageKey>("all");
+  const [isCarrierSyncing, setIsCarrierSyncing] = useState<boolean>(false);
+  const [lastCarrierSyncAt, setLastCarrierSyncAt] = useState<string | null>(() => {
+    const timestamps = initialOrders
+      .map((o) => o.shippingSyncedAt)
+      .filter((t): t is string => Boolean(t))
+      .sort()
+      .reverse();
+    return timestamps[0] || null;
+  });
+  const [lastSyncSummary, setLastSyncSummary] = useState<{ checked: number; updated: number } | null>(null);
+  const carrierSyncInFlightRef = useRef<boolean>(false);
+  const lastCarrierSyncMsRef = useRef<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
@@ -174,7 +262,7 @@ export function OrdersManagerClient({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [shippingLoadingId, setShippingLoadingId] = useState<string | null>(null);
   const [stopDeskMap, setStopDeskMap] = useState<Record<string, boolean>>({});
-  const [selectedCarrierMap, setSelectedCarrierMap] = useState<Record<string, "navex" | "anderson">>({});
+  const [selectedCarrierMap, setSelectedCarrierMap] = useState<Record<string, string>>({});
   const [shippingMessage, setShippingMessage] = useState<{
     id: string;
     type: "success" | "error";
@@ -279,6 +367,74 @@ export function OrdersManagerClient({
     };
   }, []);
 
+  // Automatic Background Sync with Navex Delivery & Anderson Logistique (EcoTrack)
+  const runCarrierAutoSync = async (force: boolean = false) => {
+    if (carrierSyncInFlightRef.current) return;
+    if (!force && typeof document !== "undefined" && document.visibilityState !== "visible") {
+      return;
+    }
+    const now = Date.now();
+    if (!force && now - lastCarrierSyncMsRef.current < 25000) {
+      return;
+    }
+
+    carrierSyncInFlightRef.current = true;
+    lastCarrierSyncMsRef.current = now;
+    setIsCarrierSyncing(true);
+
+    try {
+      const res = await syncAllEcoTrackOrdersAction({ force });
+      if (res.success) {
+        setLastCarrierSyncAt(res.syncedAt);
+        setLastSyncSummary({ checked: res.checkedCount, updated: res.updatedCount });
+        if (res.orders) {
+          res.orders.forEach((o) => knownIdsRef.current.add(o.id));
+          setOrders(res.orders);
+        }
+      } else if (force && res.error) {
+        setErrorMessage(res.error);
+      }
+    } catch (err: any) {
+      if (force) {
+        setErrorMessage(err?.message || "Erreur lors de la synchronisation Navex & Anderson");
+      }
+    } finally {
+      carrierSyncInFlightRef.current = false;
+      setIsCarrierSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    const hasDispatched = initialOrders.some((o) => Boolean(o.trackingCode));
+    let initialTimer: number | undefined;
+    if (hasDispatched) {
+      initialTimer = window.setTimeout(() => {
+        runCarrierAutoSync(false);
+      }, 600);
+    }
+
+    const syncInterval = window.setInterval(() => {
+      runCarrierAutoSync(false);
+    }, 45000);
+
+    const handleVisibleSync = () => {
+      if (document.visibilityState === "visible") {
+        runCarrierAutoSync(false);
+      }
+    };
+
+    window.addEventListener("focus", handleVisibleSync);
+    document.addEventListener("visibilitychange", handleVisibleSync);
+
+    return () => {
+      if (initialTimer) window.clearTimeout(initialTimer);
+      window.clearInterval(syncInterval);
+      window.removeEventListener("focus", handleVisibleSync);
+      document.removeEventListener("visibilitychange", handleVisibleSync);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -360,7 +516,10 @@ export function OrdersManagerClient({
             <div style="margin-top: 4px; font-size: 14px;"><strong>Tél:</strong> ${order.customer.phone} ${order.customer.alternatePhone ? `| Tél 2: ${order.customer.alternatePhone}` : ""}</div>
             <div style="margin-top: 4px; font-size: 13px;"><strong>Destination:</strong> ${getWilayaLabel(order.wilaya, "fr")} — ${order.commune}</div>
             <div style="margin-top: 2px; font-size: 13px;"><strong>Adresse:</strong> ${order.address}</div>
-            ${order.notes ? `<div style="margin-top: 8px; font-size: 12px; color: #9c4221; background: #fff3e6; padding: 6px; border-radius: 2px;">Note: ${order.notes}</div>` : ""}
+            ${(() => {
+              const cleanPrintNote = (order.notes || "").replace(/\[(ECOTRACK|SHIP_STATUS|TENTATIVE|ANNULATION):[^\]]+\]/gi, "").trim();
+              return cleanPrintNote ? `<div style="margin-top: 8px; font-size: 12px; color: #9c4221; background: #fff3e6; padding: 6px; border-radius: 2px;">Note: ${cleanPrintNote}</div>` : "";
+            })()}
           </div>
 
           <div class="section">
@@ -497,13 +656,10 @@ export function OrdersManagerClient({
     const cleanPhone = formatPhoneForWhatsApp(order.customer.phone);
     const tracking = order.trackingCode || "";
     const isAr = locale === "ar";
-    const isAnderson =
-      order.shippingCarrier === "anderson" ||
-      order.deliveryService?.toLowerCase().includes("anderson");
-    const carrierName = isAnderson ? "Anderson Logistique" : "Navex Delivery";
-    const trackingPortal = isAnderson
-      ? `https://anderson-ecommerce.ecotrack.dz/tracking/info?tracking=${tracking}`
-      : `https://navexdelivery.ecotrack.dz/tracking/info?tracking=${tracking}`;
+    const carrierMeta = findCarrierByIdOrOrder(order);
+    const carrierName = carrierMeta.name;
+    const trackingPortal =
+      order.shippingPortalUrl || `${carrierMeta.portalUrl}${encodeURIComponent(tracking)}`;
 
     const msg = isAr
       ? `مرحباً *${order.customer.name}*،\n\nيسعدنا إعلامكم بأنه تم تجهيز وشحن طلبيتكم *${order.reference}* من *إيلين للعطور* عبر شركة *${carrierName}* ! 🌿✨\n\n📦 *رقم التتبع الخاص بكم* : ${tracking}\n🚚 *شركة التوصيل* : ${carrierName} (EcoTrack)\n📍 *الوجهة* : ${getWilayaLabel(order.wilaya, "ar")} (${order.commune})\n💰 *المبلغ المستحق عند الاستلام (COD)* : ${order.total.toLocaleString("fr-DZ")} دج\n\n🔎 *تتبع مسار طردكم في الوقت الفعلي* :\n${trackingPortal}\n\nسيتواصل معكم الموزع هاتفياً قبل موعد التسليم. شكراً لاختياركم إيلين للعطور ! 🌸\n— فريق إيلين للعطور`
@@ -515,11 +671,12 @@ export function OrdersManagerClient({
 
   const handleSendToEcoTrack = async (
     order: AdminOrder,
-    specificCarrier?: "navex" | "anderson"
+    specificCarrier?: string
   ) => {
-    const carrierToUse: "navex" | "anderson" =
-      specificCarrier || selectedCarrierMap[order.id] || "navex";
-    const carrierName = carrierToUse === "anderson" ? "Anderson Logistique" : "Navex Delivery";
+    const carrierToUse: string =
+      specificCarrier || selectedCarrierMap[order.id] || defaultCarrierId;
+    const carrierMeta = findCarrierByIdOrOrder(carrierToUse);
+    const carrierName = carrierMeta.name;
     setShippingLoadingId(order.id);
     setShippingMessage(null);
     setErrorMessage(null);
@@ -546,8 +703,11 @@ export function OrdersManagerClient({
                   ...o,
                   trackingCode: res.tracking,
                   shippingLabelUrl: res.labelUrl,
-                  shippingCarrier: carrierToUse,
+                  shippingPortalUrl: res.portalUrl,
+                  shippingCarrier: res.carrier || carrierToUse,
                   deliveryService: res.carrierName || carrierName,
+                  shippingStatus: (res as any).shippingStatus || "prete_a_expedier",
+                  shippingSyncedAt: (res as any).shippingSyncedAt || new Date().toISOString(),
                   commune: (res as any).resolvedCommune || o.commune,
                   status: "shipped",
                 }
@@ -575,10 +735,9 @@ export function OrdersManagerClient({
     setShippingLoadingId(order.id);
     setShippingMessage(null);
 
-    const carrierId: "navex" | "anderson" =
-      order.shippingCarrier ||
-      (order.deliveryService?.toLowerCase().includes("anderson") ? "anderson" : "navex");
-    const carrierName = carrierId === "anderson" ? "Anderson Logistique" : "Navex Delivery";
+    const carrierMeta = findCarrierByIdOrOrder(order);
+    const carrierId = carrierMeta.id;
+    const carrierName = carrierMeta.name;
 
     try {
       const res = await syncEcoTrackStatusAction(order.id, order.trackingCode, carrierId);
@@ -595,6 +754,7 @@ export function OrdersManagerClient({
                   status: nextStatus,
                   isPaid: nextPaid,
                   shippingStatus: res.latestStatus || o.shippingStatus,
+                  shippingSyncedAt: (res as any).syncedAt || new Date().toISOString(),
                 }
               : o
           )
@@ -617,10 +777,9 @@ export function OrdersManagerClient({
 
   const handleCancelEcoTrack = async (order: AdminOrder) => {
     if (!order.trackingCode) return;
-    const carrierId: "navex" | "anderson" =
-      order.shippingCarrier ||
-      (order.deliveryService?.toLowerCase().includes("anderson") ? "anderson" : "navex");
-    const carrierName = carrierId === "anderson" ? "Anderson Logistique" : "Navex Delivery";
+    const carrierMeta = findCarrierByIdOrOrder(order);
+    const carrierId = carrierMeta.id;
+    const carrierName = carrierMeta.name;
     const confirmMsg =
       locale === "ar"
         ? `هل أنت متأكد من إلغاء طرد ${carrierName} (رقم التتبع: ${order.trackingCode})؟`
@@ -672,10 +831,59 @@ export function OrdersManagerClient({
   const deliveredCount = orders.filter((o) => o.status === "delivered").length;
   const cancelledCount = orders.filter((o) => o.status === "cancelled").length;
 
+  // Dispatched Orders (Dynamic EcoTrack Carriers) & Live Carrier Stage Counts
+  const getOrderCarrierId = (o: AdminOrder): string => findCarrierByIdOrOrder(o).id;
+
+  const dispatchedOrders = orders.filter((o) => Boolean(o.trackingCode));
+  const dispatchedCountByCarrier = new Map<string, number>();
+  for (const o of dispatchedOrders) {
+    const cid = getOrderCarrierId(o);
+    dispatchedCountByCarrier.set(cid, (dispatchedCountByCarrier.get(cid) || 0) + 1);
+  }
+
+  // Carriers to display as filter tabs: all configured active carriers + any inactive carrier that still has orders
+  const syncFilterCarriers = carriers.filter(
+    (c) => c.isActive || (dispatchedCountByCarrier.get(c.id) || 0) > 0
+  );
+
+  const carrierScopedOrders = dispatchedOrders.filter((o) => {
+    if (selectedCarrierFilter === "all") return true;
+    return getOrderCarrierId(o) === selectedCarrierFilter;
+  });
+
+  const carrierStageCounts: Record<CarrierStageKey, number> = {
+    prete_a_expedier: 0,
+    en_ramassage: 0,
+    vers_station: 0,
+    en_station: 0,
+    vers_wilaya: 0,
+    en_preparation: 0,
+    en_livraison: 0,
+    suspendus: 0,
+    livres: 0,
+    retours: 0,
+  };
+  for (const o of carrierScopedOrders) {
+    const stageKey = normalizeEcoTrackStage(o.shippingStatus, o.status);
+    carrierStageCounts[stageKey] += 1;
+  }
+
   // Filtered list
   const filteredOrders = orders.filter((o) => {
     if (selectedStatus !== "all" && o.status !== selectedStatus) {
       return false;
+    }
+    if (selectedCarrierFilter !== "all") {
+      if (!o.trackingCode || getOrderCarrierId(o) !== selectedCarrierFilter) {
+        return false;
+      }
+    }
+    if (selectedCarrierStage !== "all") {
+      if (!o.trackingCode) return false;
+      const stageKey = normalizeEcoTrackStage(o.shippingStatus, o.status);
+      if (stageKey !== selectedCarrierStage) {
+        return false;
+      }
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -735,10 +943,14 @@ export function OrdersManagerClient({
               key={s.key}
               onClick={() => {
                 setSelectedStatus(s.key);
+                setSelectedCarrierStage("all");
+                if (s.key === "all") {
+                  setSelectedCarrierFilter("all");
+                }
                 setCurrentPage(1);
               }}
               className={`group relative overflow-hidden p-3.5 text-center rounded-xl border transition-all duration-150 cursor-pointer text-left rtl:text-right ${
-                isSelected
+                isSelected && selectedCarrierStage === "all"
                   ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
                   : "bg-white border-zinc-200/80 hover:border-zinc-300 hover:shadow-xs text-zinc-900"
               }`}
@@ -746,7 +958,7 @@ export function OrdersManagerClient({
               <div className="flex items-center justify-between mb-1">
                 <span
                   className={`text-[11px] font-semibold tracking-wide capitalize ${
-                    isSelected ? "text-zinc-300" : "text-zinc-500"
+                    isSelected && selectedCarrierStage === "all" ? "text-zinc-300" : "text-zinc-500"
                   }`}
                 >
                   {locale === "ar" ? s.labelAr : s.labelFr}
@@ -754,14 +966,14 @@ export function OrdersManagerClient({
                 {s.dot && (
                   <span
                     className={`h-2 w-2 rounded-full ${s.dot} ${
-                      s.highlight && !isSelected ? "animate-ping" : ""
+                      s.highlight && !(isSelected && selectedCarrierStage === "all") ? "animate-ping" : ""
                     }`}
                   />
                 )}
               </div>
               <p
                 className={`text-xl font-bold tracking-tight leading-none ${
-                  isSelected ? "text-white" : "text-zinc-900"
+                  isSelected && selectedCarrierStage === "all" ? "text-white" : "text-zinc-900"
                 }`}
               >
                 {s.count}
@@ -769,6 +981,259 @@ export function OrdersManagerClient({
             </button>
           );
         })}
+      </div>
+
+      {/* Live Navex & Anderson Carrier Synchronization Panel */}
+      <div className="bg-white rounded-xl border border-zinc-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
+        {/* Panel Header */}
+        <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/70 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-zinc-900 text-amber-300 flex items-center justify-center shrink-0 shadow-xs">
+              <Truck className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-xs sm:text-sm font-bold text-zinc-900 tracking-tight">
+                  {locale === "ar"
+                    ? "مزامنة شركات التوصيل (EcoTrack)"
+                    : "Synchronisation Transporteurs EcoTrack"}
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full bg-emerald-500 ${
+                      isCarrierSyncing ? "animate-ping" : "animate-pulse"
+                    }`}
+                  />
+                  <span>
+                    {isCarrierSyncing
+                      ? locale === "ar"
+                        ? "جاري المزامنة..."
+                        : "Sync en cours..."
+                      : locale === "ar"
+                      ? "مزامنة تلقائية"
+                      : "Auto-sync actif"}
+                  </span>
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                <span>
+                  {locale === "ar"
+                    ? `${dispatchedOrders.length} طرد مرسل من المتجر`
+                    : `${dispatchedOrders.length} colis expédié(s) depuis le tableau de bord`}
+                </span>
+                {lastCarrierSyncAt && (
+                  <>
+                    <span className="text-zinc-300">•</span>
+                    <span className="font-mono text-[10px] text-zinc-500">
+                      {locale === "ar" ? "آخر مزامنة:" : "Dernière sync :"}{" "}
+                      {new Date(lastCarrierSyncAt).toLocaleTimeString(
+                        locale === "ar" ? "ar-DZ" : "fr-DZ",
+                        { hour: "2-digit", minute: "2-digit", second: "2-digit" }
+                      )}
+                    </span>
+                  </>
+                )}
+                {lastSyncSummary && lastSyncSummary.updated > 0 && (
+                  <>
+                    <span className="text-zinc-300">•</span>
+                    <span className="text-emerald-700 font-semibold text-[10px]">
+                      {locale === "ar"
+                        ? `+${lastSyncSummary.updated} تحديث`
+                        : `+${lastSyncSummary.updated} mis à jour`}
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* Carrier Filter Switcher & Manual Sync Button */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex flex-wrap items-center rounded-lg p-0.5 bg-zinc-200/60 border border-zinc-200/80 gap-0.5">
+              {[
+                {
+                  id: "all",
+                  label: locale === "ar" ? "الكل" : "Tous",
+                  count: dispatchedOrders.length,
+                  activeClass: "bg-zinc-900 text-white shadow-xs",
+                },
+                ...syncFilterCarriers.map((c) => ({
+                  id: c.id,
+                  label: c.shortName,
+                  count: dispatchedCountByCarrier.get(c.id) || 0,
+                  activeClass: getCarrierColorTheme(c.accentColor).activeTab,
+                })),
+              ].map((carrierTab) => {
+                const isActive = selectedCarrierFilter === carrierTab.id;
+                return (
+                  <button
+                    key={carrierTab.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCarrierFilter(carrierTab.id);
+                      if (carrierTab.id !== "all") {
+                        setSelectedStatus("all");
+                      }
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                      isActive
+                        ? carrierTab.activeClass
+                        : "text-zinc-600 hover:text-zinc-900"
+                    }`}
+                  >
+                    <span>{carrierTab.label}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                        isActive ? "bg-white/20 text-white" : "bg-white text-zinc-700"
+                      }`}
+                    >
+                      {carrierTab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              disabled={isCarrierSyncing}
+              onClick={() => runCarrierAutoSync(true)}
+              title={
+                locale === "ar"
+                  ? "مزامنة فورية لجميع طرود Navex و Anderson"
+                  : "Synchroniser immédiatement tous les colis Navex & Anderson"
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-semibold transition-colors cursor-pointer disabled:opacity-60 shadow-xs"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 text-amber-300 ${isCarrierSyncing ? "animate-spin" : ""}`}
+              />
+              <span>
+                {isCarrierSyncing
+                  ? locale === "ar"
+                    ? "جاري التحديث..."
+                    : "Sync..."
+                  : locale === "ar"
+                  ? "تحديث الآن"
+                  : "Synchroniser"}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* 8 Active Delivery Stages + 2 Completed Stages */}
+        <div className="p-3 sm:p-3.5 space-y-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+            {CARRIER_STAGES.map((stage) => {
+              const count = carrierStageCounts[stage.key];
+              const isSelected = selectedCarrierStage === stage.key;
+              const isAlertStage = stage.key === "suspendus" && count > 0;
+
+              return (
+                <button
+                  key={stage.key}
+                  type="button"
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedCarrierStage("all");
+                    } else {
+                      setSelectedCarrierStage(stage.key);
+                      setSelectedStatus("all");
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className={`group relative rounded-lg border px-3 py-2.5 transition-all duration-150 cursor-pointer text-left rtl:text-right ${
+                    isSelected
+                      ? `${stage.activeCardClass} shadow-xs`
+                      : isAlertStage
+                      ? "bg-rose-50/70 border-rose-200 hover:border-rose-300 text-rose-950"
+                      : stage.group === "completed"
+                      ? "bg-zinc-50/70 border-zinc-200/70 hover:border-zinc-300 text-zinc-900"
+                      : "bg-white border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50/60 text-zinc-900"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1.5 mb-1">
+                    <span
+                      className={`text-[11px] font-semibold leading-tight truncate ${
+                        isSelected
+                          ? "text-white/95"
+                          : isAlertStage
+                          ? "text-rose-800"
+                          : "text-zinc-600"
+                      }`}
+                    >
+                      {locale === "ar" ? stage.labelAr : stage.labelFr}
+                    </span>
+                    <span
+                      className={`h-2 w-2 rounded-full shrink-0 ${
+                        isSelected ? "bg-white" : stage.dotClass
+                      } ${isAlertStage && !isSelected ? "animate-ping" : ""}`}
+                    />
+                  </div>
+                  <div className="flex items-baseline justify-between gap-1">
+                    <span
+                      className={`text-lg font-bold tracking-tight leading-none ${
+                        isSelected
+                          ? "text-white"
+                          : count === 0
+                          ? "text-zinc-400"
+                          : isAlertStage
+                          ? "text-rose-700"
+                          : "text-zinc-900"
+                      }`}
+                    >
+                      {count}
+                    </span>
+                    {stage.group === "completed" && (
+                      <span
+                        className={`text-[9px] uppercase tracking-wider font-bold ${
+                          isSelected ? "text-white/75" : "text-zinc-400"
+                        }`}
+                      >
+                        {locale === "ar" ? "منتهي" : "Final"}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {(selectedCarrierFilter !== "all" || selectedCarrierStage !== "all") && (
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-100 text-[11px]">
+              <div className="flex items-center gap-1.5 flex-wrap text-zinc-600">
+                <Filter className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>{locale === "ar" ? "تصفية التوصيل النشطة:" : "Filtre transporteur actif :"}</span>
+                {selectedCarrierFilter !== "all" && (
+                  <span className="px-2 py-0.5 rounded-full bg-zinc-900 text-white font-bold text-[10px]">
+                    {findCarrierByIdOrOrder(selectedCarrierFilter).name}
+                  </span>
+                )}
+                {selectedCarrierStage !== "all" && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full border font-bold text-[10px] ${CARRIER_STAGE_MAP[selectedCarrierStage].badgeClass}`}
+                  >
+                    {locale === "ar"
+                      ? CARRIER_STAGE_MAP[selectedCarrierStage].labelAr
+                      : CARRIER_STAGE_MAP[selectedCarrierStage].labelFr}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCarrierFilter("all");
+                  setSelectedCarrierStage("all");
+                  setCurrentPage(1);
+                }}
+                className="text-zinc-500 hover:text-zinc-900 font-semibold underline cursor-pointer shrink-0"
+              >
+                {locale === "ar" ? "إلغاء التصفية" : "Réinitialiser"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Search & Bulk Control Bar */}
@@ -833,7 +1298,10 @@ export function OrdersManagerClient({
             {locale === "ar" ? "لا توجد طلبيات مطابقة" : "Aucune commande trouvée"}
           </p>
           <p className="text-xs text-zinc-400 mt-1 max-w-sm mx-auto leading-relaxed">
-            {selectedStatus !== "all" || searchQuery
+            {selectedStatus !== "all" ||
+            selectedCarrierFilter !== "all" ||
+            selectedCarrierStage !== "all" ||
+            searchQuery
               ? locale === "ar"
                 ? "جرب تغيير معايير البحث أو اختيار تبويب آخر."
                 : "Essayez de modifier votre recherche ou de réinitialiser le filtre de statut."
@@ -841,10 +1309,15 @@ export function OrdersManagerClient({
               ? "ستظهر الطلبيات هنا مباشرة فور قيام الزبائن بالشراء من الموقع."
               : "Les commandes des clients s'afficheront ici en direct."}
           </p>
-          {(selectedStatus !== "all" || searchQuery) && (
+          {(selectedStatus !== "all" ||
+            selectedCarrierFilter !== "all" ||
+            selectedCarrierStage !== "all" ||
+            searchQuery) && (
             <button
               onClick={() => {
                 setSelectedStatus("all");
+                setSelectedCarrierFilter("all");
+                setSelectedCarrierStage("all");
                 setSearchQuery("");
                 setCurrentPage(1);
               }}
@@ -890,10 +1363,12 @@ export function OrdersManagerClient({
                     .toUpperCase()
                 : "CL";
 
-              const isAndersonRow =
-                order.shippingCarrier === "anderson" ||
-                order.deliveryService?.toLowerCase().includes("anderson");
-              const carrierLabelRow = isAndersonRow ? "Anderson" : "Navex";
+              const rowCarrier = findCarrierByIdOrOrder(order);
+              const carrierLabelRow = rowCarrier.shortName;
+              const carrierStageKey = order.trackingCode
+                ? normalizeEcoTrackStage(order.shippingStatus, order.status)
+                : null;
+              const carrierStageDef = carrierStageKey ? CARRIER_STAGE_MAP[carrierStageKey] : null;
 
               const isNewlyArrived = recentlyArrivedIds.has(order.id);
 
@@ -951,12 +1426,21 @@ export function OrdersManagerClient({
                       </div>
 
                       <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${config.className}`}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-current shrink-0" />
-                          <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
-                        </span>
+                        {carrierStageDef ? (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${carrierStageDef.badgeClass}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${carrierStageDef.dotClass}`} />
+                            <span>{locale === "ar" ? carrierStageDef.labelAr : carrierStageDef.labelFr}</span>
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${config.className}`}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-current shrink-0" />
+                            <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
+                          </span>
+                        )}
                         {order.status === "new" && order.callAttempts && order.callAttempts > 0 ? (
                           <span
                             className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold border whitespace-nowrap ${
@@ -1043,11 +1527,7 @@ export function OrdersManagerClient({
                         {order.trackingCode && (
                           <>
                             <span
-                              className={`inline-flex items-center gap-1 px-1.5 py-1 rounded text-[9px] font-mono font-bold ${
-                                isAndersonRow
-                                  ? "bg-orange-950 text-orange-300"
-                                  : "bg-zinc-900 text-amber-300"
-                              }`}
+                              className={`inline-flex items-center gap-1 px-1.5 py-1 rounded text-[9px] font-mono font-bold ${rowCarrier.theme.chipClass}`}
                             >
                               {carrierLabelRow}
                             </span>
@@ -1238,12 +1718,22 @@ export function OrdersManagerClient({
                     {/* 7. Status Badge & Tracking */}
                     <div className="py-3 px-3 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${config.className}`}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-current shrink-0" />
-                          <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
-                        </span>
+                        {carrierStageDef ? (
+                          <span
+                            title={`${carrierLabelRow}: ${locale === "ar" ? carrierStageDef.labelAr : carrierStageDef.labelFr}`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${carrierStageDef.badgeClass}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${carrierStageDef.dotClass}`} />
+                            <span>{locale === "ar" ? carrierStageDef.labelAr : carrierStageDef.labelFr}</span>
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${config.className}`}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-current shrink-0" />
+                            <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
+                          </span>
+                        )}
 
                         {order.status === "new" && order.callAttempts && order.callAttempts > 0 ? (
                           <span
@@ -1269,18 +1759,10 @@ export function OrdersManagerClient({
                       {order.trackingCode ? (
                         <div className="mt-1 flex items-center gap-1 flex-wrap">
                           <span
-                            title={`${carrierLabelRow}: ${order.trackingCode}`}
-                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shadow-2xs whitespace-nowrap ${
-                              isAndersonRow
-                                ? "bg-orange-950 text-orange-300 border border-orange-800/60"
-                                : "bg-zinc-900 text-amber-300 border border-zinc-700"
-                            }`}
+                            title={`${rowCarrier.name}: ${order.trackingCode}`}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shadow-2xs whitespace-nowrap ${rowCarrier.theme.chipClass}`}
                           >
-                            {isAndersonRow ? (
-                              <Package className="w-2.5 h-2.5 text-orange-400 shrink-0" />
-                            ) : (
-                              <Truck className="w-2.5 h-2.5 text-amber-400 shrink-0" />
-                            )}
+                            <Truck className="w-2.5 h-2.5 shrink-0" />
                             <span>{carrierLabelRow}</span>
                           </span>
                           {order.shippingLabelUrl && (
@@ -1310,40 +1792,33 @@ export function OrdersManagerClient({
                       ) : (
                         order.status === "confirmed" && (
                           <div className="mt-1 flex items-center gap-1 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSendToEcoTrack(order, "navex");
-                              }}
-                              disabled={shippingLoadingId === order.id}
-                              title="Expédier avec Navex Delivery en 1-clic"
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-600 hover:bg-amber-700 text-white transition-all cursor-pointer disabled:opacity-50 shadow-2xs whitespace-nowrap"
-                            >
-                              {shippingLoadingId === order.id ? (
-                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                              ) : (
-                                <Truck className="w-2.5 h-2.5" />
-                              )}
-                              <span>Navex</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSendToEcoTrack(order, "anderson");
-                              }}
-                              disabled={shippingLoadingId === order.id}
-                              title="Expédier avec Anderson Logistique en 1-clic"
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-600 hover:bg-orange-700 text-white transition-all cursor-pointer disabled:opacity-50 shadow-2xs whitespace-nowrap"
-                            >
-                              {shippingLoadingId === order.id ? (
-                                <Loader2 className="w-2.5 h-2.5 animate-spin text-white" />
-                              ) : (
-                                <Package className="w-2.5 h-2.5" />
-                              )}
-                              <span>Anderson</span>
-                            </button>
+                            {dispatchCarriers.map((c) => {
+                              const cTheme = getCarrierColorTheme(c.accentColor);
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendToEcoTrack(order, c.id);
+                                  }}
+                                  disabled={shippingLoadingId === order.id}
+                                  title={
+                                    locale === "ar"
+                                      ? `إرسال بنقرة واحدة عبر ${c.name}`
+                                      : `Expédier avec ${c.name} en 1-clic`
+                                  }
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer disabled:opacity-50 shadow-2xs whitespace-nowrap ${cTheme.buttonBg}`}
+                                >
+                                  {shippingLoadingId === order.id ? (
+                                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                  ) : (
+                                    <Truck className="w-2.5 h-2.5" />
+                                  )}
+                                  <span>{c.shortName}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                         )
                       )}
@@ -1534,7 +2009,7 @@ export function OrdersManagerClient({
                                     ) : null}
 
                                     {order.notes && (() => {
-                                      const cleanUserNotes = order.notes.replace(/\[(ECOTRACK|TENTATIVE|ANNULATION):[^\]]+\]/gi, "").trim();
+                                      const cleanUserNotes = order.notes.replace(/\[(ECOTRACK|SHIP_STATUS|TENTATIVE|ANNULATION):[^\]]+\]/gi, "").trim();
                                       if (!cleanUserNotes) return null;
                                       return (
                                         <div className="mt-2 text-xs text-amber-900 bg-amber-50/90 p-3 rounded-lg border border-amber-200/80">
@@ -1624,12 +2099,36 @@ export function OrdersManagerClient({
                                     <div className="space-y-3 pt-2 text-xs">
                                       <div className="bg-zinc-50 border border-zinc-200/60 p-3 rounded-lg">
                                         <p className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">
-                                          {locale === "ar" ? "الحالة الحالية" : "Statut actuel de la commande"}
+                                          {carrierStageDef
+                                            ? locale === "ar"
+                                              ? `حالة التوصيل التلقائية (${carrierLabelRow})`
+                                              : `Statut transporteur auto-synchronisé (${carrierLabelRow})`
+                                            : locale === "ar"
+                                            ? "الحالة الحالية"
+                                            : "Statut actuel de la commande"}
                                         </p>
                                         <p className="text-sm font-bold text-zinc-900 mt-1 flex items-center gap-2">
                                           <StatusIcon className="w-4 h-4 text-amber-600" />
-                                          <span>{locale === "ar" ? config.labelAr : config.labelFr}</span>
+                                          <span>
+                                            {carrierStageDef
+                                              ? locale === "ar"
+                                                ? carrierStageDef.labelAr
+                                                : carrierStageDef.labelFr
+                                              : locale === "ar"
+                                              ? config.labelAr
+                                              : config.labelFr}
+                                          </span>
                                         </p>
+                                        {carrierStageDef && (
+                                          <p className="text-[10px] text-emerald-700 font-medium mt-1.5 flex items-center gap-1">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                            <span>
+                                              {locale === "ar"
+                                                ? `مزامنة تلقائية من ${carrierLabelRow} دون تدخل يدوي`
+                                                : `Suit automatiquement ${carrierLabelRow} (pas de mise à jour manuelle)`}
+                                            </span>
+                                          </p>
+                                        )}
                                       </div>
 
                                       {/* Action Buttons depending on status */}
@@ -1823,7 +2322,7 @@ export function OrdersManagerClient({
                                               </button>
                                             )}
 
-                                            {order.status === "preparing" && (
+                                            {!order.trackingCode && order.status === "preparing" && (
                                               <button
                                                 type="button"
                                                 onClick={() => handleStatusChange(order.id, "shipped")}
@@ -1834,7 +2333,27 @@ export function OrdersManagerClient({
                                               </button>
                                             )}
 
-                                            {order.status === "shipped" && (
+                                            {order.trackingCode && (
+                                              <button
+                                                type="button"
+                                                disabled={shippingLoadingId === order.id}
+                                                onClick={() => handleSyncEcoTrack(order)}
+                                                className="w-full py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-60"
+                                              >
+                                                {shippingLoadingId === order.id ? (
+                                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                                                ) : (
+                                                  <RefreshCw className="w-3.5 h-3.5 text-amber-300" />
+                                                )}
+                                                <span>
+                                                  {locale === "ar"
+                                                    ? `مزامنة فورية مع ${carrierLabelRow}`
+                                                    : `Synchroniser avec ${carrierLabelRow}`}
+                                                </span>
+                                              </button>
+                                            )}
+
+                                            {!order.trackingCode && order.status === "shipped" && (
                                               <button
                                                 type="button"
                                                 onClick={() => handleStatusChange(order.id, "delivered", true)}
@@ -1887,7 +2406,7 @@ export function OrdersManagerClient({
                                 </div>
                               </div>
 
-                              {/* 3. Navex & Anderson Multi-Carrier Logistics & WhatsApp Hub */}
+                              {/* 3. Multi-Carrier EcoTrack Logistics & WhatsApp Hub */}
                               <div className="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 border border-zinc-800 rounded-xl p-5 shadow-lg text-zinc-100">
                                 {/* Header */}
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800">
@@ -1896,11 +2415,11 @@ export function OrdersManagerClient({
                                       <Truck className="w-5 h-5" />
                                     </div>
                                     <div>
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
                                         <h4 className="font-bold text-sm tracking-wide text-white">
                                           {locale === "ar"
-                                            ? "مركز الشحن والتوصيل (Navex & Anderson Logistique)"
-                                            : "Centre d'Expédition Multi-Transporteurs (Navex & Anderson)"}
+                                            ? "مركز الشحن والتوصيل متعدد الشركات"
+                                            : "Centre d'Expédition Multi-Transporteurs"}
                                         </h4>
                                         <span className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-mono font-semibold">
                                           EcoTrack API
@@ -1917,25 +2436,16 @@ export function OrdersManagerClient({
                                   {/* Status Badge */}
                                   <div>
                                     {order.trackingCode ? (
-                                      (() => {
-                                        const isAnderson =
-                                          order.shippingCarrier === "anderson" ||
-                                          order.deliveryService?.toLowerCase().includes("anderson");
-                                        return (
-                                          <span
-                                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border ${
-                                              isAnderson
-                                                ? "bg-orange-950/80 text-orange-300 border-orange-700/60"
-                                                : "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
-                                            }`}
-                                          >
-                                            <CheckCircle className="w-3.5 h-3.5" />
-                                            <span>
-                                              {isAnderson ? "Colis Anderson Logistique" : "Colis Navex Delivery"}
-                                            </span>
-                                          </span>
-                                        );
-                                      })()
+                                      <span
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border ${rowCarrier.theme.darkBadgeClass}`}
+                                      >
+                                        <CheckCircle className="w-3.5 h-3.5" />
+                                        <span>
+                                          {locale === "ar"
+                                            ? `طرد ${rowCarrier.name}`
+                                            : `Colis ${rowCarrier.name}`}
+                                        </span>
+                                      </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800/80 text-zinc-300 border border-zinc-700 text-xs font-medium">
                                         <Clock className="w-3.5 h-3.5 text-amber-400" />
@@ -1976,146 +2486,138 @@ export function OrdersManagerClient({
                                 <div className="mt-4">
                                   {!order.trackingCode ? (
                                     /* State A: Ready to Dispatch */
-                                    <div className="bg-zinc-900/60 rounded-xl p-4 border border-zinc-800 space-y-4">
-                                      {/* Carrier Selection Switcher */}
-                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-zinc-950/80 border border-zinc-800">
-                                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                                          <span className="text-xs font-semibold text-zinc-300">
-                                            {locale === "ar" ? "شركة الشحن :" : "Transporteur :"}
-                                          </span>
-                                          <div className="inline-flex flex-wrap rounded-lg p-1 bg-zinc-900 border border-zinc-800 gap-1">
+                                    (() => {
+                                      const selectedId = selectedCarrierMap[order.id] || defaultCarrierId;
+                                      const selectedCarrier = findCarrierByIdOrOrder(selectedId);
+
+                                      return (
+                                        <div className="bg-zinc-900/60 rounded-xl p-4 border border-zinc-800 space-y-4">
+                                          {/* Dynamic Carrier Selection Switcher */}
+                                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-zinc-950/80 border border-zinc-800">
+                                            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                              <span className="text-xs font-semibold text-zinc-300">
+                                                {locale === "ar" ? "شركة الشحن :" : "Transporteur :"}
+                                              </span>
+                                              <div className="inline-flex flex-wrap rounded-lg p-1 bg-zinc-900 border border-zinc-800 gap-1">
+                                                {dispatchCarriers.map((c) => {
+                                                  const isSelected = selectedCarrier.id === c.id;
+                                                  const cTheme = getCarrierColorTheme(c.accentColor);
+                                                  return (
+                                                    <button
+                                                      key={c.id}
+                                                      type="button"
+                                                      onClick={() =>
+                                                        setSelectedCarrierMap((prev) => ({
+                                                          ...prev,
+                                                          [order.id]: c.id,
+                                                        }))
+                                                      }
+                                                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                        isSelected
+                                                          ? cTheme.activeTab
+                                                          : "text-zinc-400 hover:text-white"
+                                                      }`}
+                                                    >
+                                                      <Truck className="w-3.5 h-3.5" />
+                                                      <span>{c.name}</span>
+                                                    </button>
+                                                  );
+                                                })}
+                                                <Link
+                                                  href={`/${locale}/admin/settings`}
+                                                  className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-zinc-400 hover:text-amber-300 hover:bg-zinc-800 transition-colors inline-flex items-center gap-1"
+                                                >
+                                                  <span>
+                                                    {locale === "ar" ? "+ إضافة شركة" : "+ Ajouter"}
+                                                  </span>
+                                                </Link>
+                                              </div>
+                                            </div>
+
+                                            <span className="text-[11px] text-zinc-400 font-mono">
+                                              {selectedCarrier.baseUrl.replace(/^https?:\/\//i, "")}
+                                            </span>
+                                          </div>
+
+                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                                            <div className="bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
+                                              <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
+                                                {locale === "ar" ? "المبلغ المستحق (COD)" : "Montant à Encaisser"}
+                                              </span>
+                                              <span className="font-bold text-sm text-amber-400 mt-1 block">
+                                                {formatPrice(order.total, locale)}
+                                              </span>
+                                            </div>
+                                            <div className="bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
+                                              <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
+                                                {locale === "ar" ? "الولاية والبلدية" : "Destination"}
+                                              </span>
+                                              <span className="font-semibold text-xs text-zinc-200 mt-1 block truncate">
+                                                {getWilayaLabel(order.wilaya, locale)} — {order.commune}
+                                              </span>
+                                            </div>
+                                            <div className="bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
+                                              <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
+                                                {locale === "ar" ? "طريقة التسليم" : "Mode de Livraison"}
+                                              </span>
+                                              <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={!!stopDeskMap[order.id]}
+                                                  onChange={(e) =>
+                                                    setStopDeskMap((prev) => ({
+                                                      ...prev,
+                                                      [order.id]: e.target.checked,
+                                                    }))
+                                                  }
+                                                  className="rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-amber-500"
+                                                />
+                                                <span className="text-xs text-zinc-300">
+                                                  {locale === "ar" ? "Stop Desk (المكتب)" : "Stop Desk (Bureau)"}
+                                                </span>
+                                              </label>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                                            <p className="text-[11px] text-zinc-400">
+                                              {locale === "ar"
+                                                ? `سيتم إرسال الطلبية لمنصة ${selectedCarrier.name} وتوليد البوليصة فوراً`
+                                                : `Envoi immédiat vers l'API ${selectedCarrier.name} avec génération du bordereau`}
+                                            </p>
                                             <button
                                               type="button"
-                                              onClick={() =>
-                                                setSelectedCarrierMap((prev) => ({
-                                                  ...prev,
-                                                  [order.id]: "navex",
-                                                }))
-                                              }
-                                              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                                                (selectedCarrierMap[order.id] || "navex") === "navex"
-                                                  ? "bg-amber-600 text-white shadow-xs"
-                                                  : "text-zinc-400 hover:text-white"
-                                              }`}
+                                              disabled={shippingLoadingId === order.id}
+                                              onClick={() => handleSendToEcoTrack(order, selectedCarrier.id)}
+                                              className={`w-full sm:w-auto px-5 py-2.5 font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 ${selectedCarrier.theme.buttonBg}`}
                                             >
-                                              <Truck className="w-3.5 h-3.5" />
-                                              <span>Navex Delivery</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setSelectedCarrierMap((prev) => ({
-                                                  ...prev,
-                                                  [order.id]: "anderson",
-                                                }))
-                                              }
-                                              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                                                selectedCarrierMap[order.id] === "anderson"
-                                                  ? "bg-orange-600 text-white shadow-xs"
-                                                  : "text-zinc-400 hover:text-white"
-                                              }`}
-                                            >
-                                              <Package className="w-3.5 h-3.5" />
-                                              <span>Anderson Logistique</span>
+                                              {shippingLoadingId === order.id ? (
+                                                <>
+                                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                                  <span>{locale === "ar" ? "جاري الإرسال والتسجيل..." : "Transmission API en cours..."}</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Send className="w-4 h-4" />
+                                                  <span>
+                                                    {locale === "ar"
+                                                      ? `🚀 إرسال عبر ${selectedCarrier.name}`
+                                                      : `🚀 Expédier avec ${selectedCarrier.name} (1-Clic)`}
+                                                  </span>
+                                                </>
+                                              )}
                                             </button>
                                           </div>
                                         </div>
-
-                                        <span className="text-[11px] text-zinc-400 font-mono">
-                                          {(selectedCarrierMap[order.id] || "navex") === "anderson"
-                                            ? "anderson-ecommerce.ecotrack.dz"
-                                            : "navexdelivery.ecotrack.dz"}
-                                        </span>
-                                      </div>
-
-                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                                        <div className="bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
-                                          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
-                                            {locale === "ar" ? "المبلغ المستحق (COD)" : "Montant à Encaisser"}
-                                          </span>
-                                          <span className="font-bold text-sm text-amber-400 mt-1 block">
-                                            {formatPrice(order.total, locale)}
-                                          </span>
-                                        </div>
-                                        <div className="bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
-                                          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
-                                            {locale === "ar" ? "الولاية والبلدية" : "Destination"}
-                                          </span>
-                                          <span className="font-semibold text-xs text-zinc-200 mt-1 block truncate">
-                                            {getWilayaLabel(order.wilaya, locale)} — {order.commune}
-                                          </span>
-                                        </div>
-                                        <div className="bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
-                                          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-semibold">
-                                            {locale === "ar" ? "طريقة التسليم" : "Mode de Livraison"}
-                                          </span>
-                                          <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
-                                            <input
-                                              type="checkbox"
-                                              checked={!!stopDeskMap[order.id]}
-                                              onChange={(e) =>
-                                                setStopDeskMap((prev) => ({
-                                                  ...prev,
-                                                  [order.id]: e.target.checked,
-                                                }))
-                                              }
-                                              className="rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-amber-500"
-                                            />
-                                            <span className="text-xs text-zinc-300">
-                                              {locale === "ar" ? "Stop Desk (المكتب)" : "Stop Desk (Bureau)"}
-                                            </span>
-                                          </label>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                                        <p className="text-[11px] text-zinc-400">
-                                          {selectedCarrierMap[order.id] === "anderson"
-                                            ? (locale === "ar"
-                                                ? "سيتم إرسال الطلبية لمنصة Anderson Logistique وتوليد البوليصة فوراً"
-                                                : "Envoi immédiat vers l'API Anderson Logistique avec génération du bordereau")
-                                            : (locale === "ar"
-                                                ? "سيتم إرسال الطلبية لمنصة Navex Delivery وتوليد البوليصة فوراً"
-                                                : "Envoi immédiat vers l'API Navex Delivery avec génération du bordereau")}
-                                        </p>
-                                        <button
-                                          type="button"
-                                          disabled={shippingLoadingId === order.id}
-                                          onClick={() => handleSendToEcoTrack(order)}
-                                          className={`w-full sm:w-auto px-5 py-2.5 font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 ${
-                                            selectedCarrierMap[order.id] === "anderson"
-                                              ? "bg-orange-600 hover:bg-orange-700 text-white"
-                                              : "bg-amber-600 hover:bg-amber-700 text-white"
-                                          }`}
-                                        >
-                                          {shippingLoadingId === order.id ? (
-                                            <>
-                                              <Loader2 className="w-4 h-4 animate-spin" />
-                                              <span>{locale === "ar" ? "جاري الإرسال والتسجيل..." : "Transmission API en cours..."}</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Send className="w-4 h-4" />
-                                              <span>
-                                                {selectedCarrierMap[order.id] === "anderson"
-                                                  ? (locale === "ar" ? "🚀 إرسال عبر Anderson Logistique" : "🚀 Expédier avec Anderson Logistique (1-Clic)")
-                                                  : (locale === "ar" ? "🚀 إرسال عبر Navex Delivery" : "🚀 Expédier avec Navex Delivery (1-Clic)")}
-                                              </span>
-                                            </>
-                                          )}
-                                        </button>
-                                      </div>
-                                    </div>
+                                      );
+                                    })()
                                   ) : (
                                     /* State B: Order Dispatched with Live Tracking */
                                     (() => {
-                                      const isAnderson =
-                                        order.shippingCarrier === "anderson" ||
-                                        order.deliveryService?.toLowerCase().includes("anderson");
-                                      const carrierName = isAnderson ? "Anderson Logistique" : "Navex Delivery";
-                                      const portalUrl = isAnderson
-                                        ? `https://anderson-ecommerce.ecotrack.dz/tracking/info?tracking=${order.trackingCode}`
-                                        : `https://navexdelivery.ecotrack.dz/tracking/info?tracking=${order.trackingCode}`;
+                                      const carrierName = rowCarrier.name;
+                                      const portalUrl =
+                                        order.shippingPortalUrl ||
+                                        `${rowCarrier.portalUrl}${encodeURIComponent(order.trackingCode || "")}`;
 
                                       return (
                                         <div className="space-y-4">
@@ -2129,9 +2631,7 @@ export function OrdersManagerClient({
                                               </span>
                                               <div className="flex items-center gap-2">
                                                 <span
-                                                  className={`font-mono text-base font-bold tracking-wider ${
-                                                    isAnderson ? "text-orange-400" : "text-amber-400"
-                                                  }`}
+                                                  className={`font-mono text-base font-bold tracking-wider ${rowCarrier.theme.textDarkAccent}`}
                                                 >
                                                   {order.trackingCode}
                                                 </span>
@@ -2160,21 +2660,108 @@ export function OrdersManagerClient({
                                             </div>
 
                                             {/* Quick status info */}
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-xs text-zinc-400">
-                                                {locale === "ar" ? "الناقل والحالة :" : "Transporteur & Statut :"}
-                                              </span>
-                                              <span
-                                                className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-                                                  isAnderson
-                                                    ? "bg-orange-950/70 text-orange-300 border-orange-800/60"
-                                                    : "bg-zinc-800 text-amber-300 border-zinc-700"
-                                                }`}
-                                              >
-                                                {carrierName} • {order.shippingStatus || (order.status === "delivered" ? "Livré" : "En cours")}
-                                              </span>
+                                            <div className="flex flex-col items-start md:items-end gap-1">
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-xs text-zinc-400">
+                                                  {locale === "ar" ? "الحالة المباشرة :" : "Statut transporteur :"}
+                                                </span>
+                                                <span
+                                                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                                                    carrierStageDef
+                                                      ? carrierStageDef.darkBadgeClass
+                                                      : rowCarrier.theme.darkBadgeClass
+                                                  }`}
+                                                >
+                                                  {carrierStageDef && (
+                                                    <span
+                                                      className={`h-1.5 w-1.5 rounded-full ${carrierStageDef.dotClass}`}
+                                                    />
+                                                  )}
+                                                  <span>
+                                                    {carrierName} •{" "}
+                                                    {carrierStageDef
+                                                      ? locale === "ar"
+                                                        ? carrierStageDef.labelAr
+                                                        : carrierStageDef.labelFr
+                                                      : order.shippingStatus ||
+                                                        (order.status === "delivered" ? "Livrés" : "En cours")}
+                                                  </span>
+                                                </span>
+                                              </div>
+                                              {order.shippingSyncedAt && (
+                                                <span className="text-[10px] text-zinc-500 font-mono">
+                                                  {locale === "ar" ? "آخر مزامنة:" : "Synchronisé à"}{" "}
+                                                  {new Date(order.shippingSyncedAt).toLocaleTimeString(
+                                                    locale === "ar" ? "ar-DZ" : "fr-DZ",
+                                                    { hour: "2-digit", minute: "2-digit", second: "2-digit" }
+                                                  )}
+                                                </span>
+                                              )}
                                             </div>
                                           </div>
+
+                                          {/* Live 8-Stage Carrier Progress Stepper */}
+                                          {carrierStageDef && (
+                                            <div className="bg-zinc-900/60 rounded-xl p-3.5 border border-zinc-800 space-y-3">
+                                              {carrierStageKey === "suspendus" && (
+                                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-950/80 border border-rose-700/60 text-rose-200 text-xs font-semibold">
+                                                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                                                  <span>
+                                                    {locale === "ar"
+                                                      ? `هذا الطرد معلّق حالياً لدى ${carrierName} (Suspendus)`
+                                                      : `Ce colis est actuellement Suspendu chez ${carrierName}`}
+                                                  </span>
+                                                </div>
+                                              )}
+                                              {carrierStageKey === "retours" && (
+                                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/90 border border-zinc-600 text-zinc-200 text-xs font-semibold">
+                                                  <RotateCcw className="w-4 h-4 text-zinc-400 shrink-0" />
+                                                  <span>
+                                                    {locale === "ar"
+                                                      ? `هذا الطرد في حالة إرجاع أو إلغاء لدى ${carrierName}`
+                                                      : `Ce colis est signalé en Retour / Annulé chez ${carrierName}`}
+                                                  </span>
+                                                </div>
+                                              )}
+
+                                              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5">
+                                                {CARRIER_TRANSIT_STEPS.map((step) => {
+                                                  const currentStepOrder = carrierStageDef.stepOrder;
+                                                  const isCurrent = carrierStageKey === step.key;
+                                                  const isPassed =
+                                                    currentStepOrder > 0 && step.stepOrder < currentStepOrder;
+
+                                                  return (
+                                                    <div
+                                                      key={step.key}
+                                                      className={`px-2 py-2 rounded-lg border text-center transition-all ${
+                                                        isCurrent
+                                                          ? `${step.darkBadgeClass} ring-1 ring-white/20 shadow-xs`
+                                                          : isPassed
+                                                          ? "bg-emerald-950/40 border-emerald-800/40 text-emerald-300"
+                                                          : "bg-zinc-950/60 border-zinc-800/80 text-zinc-500"
+                                                      }`}
+                                                    >
+                                                      <div className="flex items-center justify-center mb-1">
+                                                        {isPassed ? (
+                                                          <Check className="w-3 h-3 text-emerald-400" />
+                                                        ) : isCurrent ? (
+                                                          <span
+                                                            className={`h-2 w-2 rounded-full ${step.dotClass} animate-pulse`}
+                                                          />
+                                                        ) : (
+                                                          <span className="h-1.5 w-1.5 rounded-full bg-zinc-700" />
+                                                        )}
+                                                      </div>
+                                                      <p className="text-[10px] font-bold leading-tight truncate">
+                                                        {locale === "ar" ? step.shortAr : step.shortFr}
+                                                      </p>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          )}
 
                                           {/* 4 Interactive Operations Buttons */}
                                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
@@ -2187,7 +2774,7 @@ export function OrdersManagerClient({
                                                 className="p-3 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-all group"
                                               >
                                                 <FileText className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-                                                <span>{locale === "ar" ? `📄 بوليصة الشحن (${isAnderson ? "Anderson" : "Navex"})` : `📄 Bordereau ${isAnderson ? "Anderson" : "Navex"} (PDF)`}</span>
+                                                <span>{locale === "ar" ? `📄 بوليصة الشحن (${carrierLabelRow})` : `📄 Bordereau ${carrierLabelRow} (PDF)`}</span>
                                               </a>
                                             ) : (
                                               <button

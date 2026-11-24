@@ -4,6 +4,9 @@ import { getProducts } from "@/lib/services/products.service";
 import { getCustomTiers } from "@/lib/services/bundles.service";
 import { PackBuilderClient } from "@/components/storefront/pack-builder-client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 interface BuilderPageProps {
   params: Promise<{ locale: string }>;
 }

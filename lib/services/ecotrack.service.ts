@@ -1,5 +1,12 @@
 import ecotrackCommunesData from "@/lib/data/ecotrack-communes.json";
 import { ALGERIA_WILAYAS, getEcoTrackWilayaCode } from "@/lib/data/algeria-locations";
+import {
+  CarrierStageKey,
+  CARRIER_STAGE_MAP,
+  normalizeEcoTrackStage,
+  isEcoTrackStatusPaid,
+} from "@/lib/shipping/carrier-stages";
+import { getCarrierByIdServer } from "@/lib/services/carriers.service";
 
 export interface EcoTrackCommune {
   nom: string;
@@ -214,7 +221,7 @@ export interface EcoTrackTrackingInfoResponse {
   error?: string;
 }
 
-export type ShippingCarrierId = "navex" | "anderson";
+export type ShippingCarrierId = string;
 
 export interface CarrierConfig {
   id: ShippingCarrierId;
@@ -223,6 +230,20 @@ export interface CarrierConfig {
   baseUrl: string;
   token: string;
   portalUrl: string;
+}
+
+export async function resolveCarrierConfig(
+  carrierId: ShippingCarrierId = "navex"
+): Promise<CarrierConfig> {
+  const rec = await getCarrierByIdServer(carrierId);
+  return {
+    id: rec.id,
+    name: rec.name,
+    shortName: rec.shortName,
+    baseUrl: rec.baseUrl,
+    token: rec.apiToken,
+    portalUrl: rec.portalUrl,
+  };
 }
 
 export function getCarrierConfig(carrierId: ShippingCarrierId = "navex"): CarrierConfig {
@@ -285,7 +306,7 @@ export async function createEcoTrackShipment(
   carrierId: ShippingCarrierId = "navex"
 ): Promise<EcoTrackCreateResponse & { carrier?: ShippingCarrierId }> {
   try {
-    const carrier = getCarrierConfig(carrierId);
+    const carrier = await resolveCarrierConfig(carrierId);
     if (!carrier.token) {
       return { success: false, error: `Clé API ${carrier.name} non configurée` };
     }
@@ -354,47 +375,119 @@ export async function createEcoTrackShipment(
 /**
  * Returns direct URL to download/view official shipping label PDF
  */
+export function buildEcoTrackLabelUrl(
+  tracking: string,
+  baseUrl: string,
+  token: string
+): string {
+  const cleanBase = (baseUrl || "").replace(/\/+$/, "");
+  return `${cleanBase}/api/v1/get/order/label?tracking=${encodeURIComponent(tracking)}&api_token=${encodeURIComponent(token)}`;
+}
+
 export function getEcoTrackLabelUrl(
   tracking: string,
   carrierId: ShippingCarrierId = "navex"
 ): string {
   const carrier = getCarrierConfig(carrierId);
-  return `${carrier.baseUrl}/api/v1/get/order/label?tracking=${encodeURIComponent(tracking)}&api_token=${encodeURIComponent(carrier.token)}`;
+  return buildEcoTrackLabelUrl(tracking, carrier.baseUrl, carrier.token);
+}
+
+export async function getEcoTrackLabelUrlAsync(
+  tracking: string,
+  carrierId: ShippingCarrierId = "navex"
+): Promise<string> {
+  const carrier = await resolveCarrierConfig(carrierId);
+  return buildEcoTrackLabelUrl(tracking, carrier.baseUrl, carrier.token);
 }
 
 /**
- * Retrieves tracking info and activity history from EcoTrack
+ * Retrieves real dashboard order status from EcoTrack (/api/v1/get/orders?tracking=...)
+ * and tracking activity from /api/v1/get/tracking/info.
+ * Note: EcoTrack's /get/orders returns the exact dashboard stage (e.g. prete_a_expedier,
+ * en_ramassage, vers_hub, en_hub, vers_wilaya, en_preparation, en_livraison, suspendu),
+ * whereas /get/tracking/info can lag behind on early transitions like Prêt à expédier -> Vers Station.
  */
 export async function getEcoTrackTrackingInfo(
   tracking: string,
   carrierId: ShippingCarrierId = "navex"
 ): Promise<EcoTrackTrackingInfoResponse> {
   try {
-    const carrier = getCarrierConfig(carrierId);
-    const res = await fetch(
-      `${carrier.baseUrl}/api/v1/get/tracking/info?tracking=${encodeURIComponent(tracking)}&api_token=${encodeURIComponent(carrier.token)}`,
-      {
-        headers: {
-          "Accept": "application/json",
-          "Authorization": `Bearer ${carrier.token}`,
-        },
-      }
-    );
+    const carrier = await resolveCarrierConfig(carrierId);
+    const headers = {
+      "Accept": "application/json",
+      "Authorization": `Bearer ${carrier.token}`,
+    };
 
-    const data = await res.json();
-    if (!res.ok || data.success === false) {
-      return { success: false, error: data.message || "Erreur récupération suivi" };
+    const [orderRes, trackingRes] = await Promise.allSettled([
+      fetch(
+        `${carrier.baseUrl}/api/v1/get/orders?api_token=${encodeURIComponent(carrier.token)}&tracking=${encodeURIComponent(tracking)}`,
+        { headers, cache: "no-store", signal: AbortSignal.timeout(8000) }
+      ),
+      fetch(
+        `${carrier.baseUrl}/api/v1/get/tracking/info?tracking=${encodeURIComponent(tracking)}&api_token=${encodeURIComponent(carrier.token)}`,
+        { headers, cache: "no-store", signal: AbortSignal.timeout(8000) }
+      ),
+    ]);
+
+    let orderStatus: string | undefined;
+    let orderRecipient: string | undefined;
+    let orderDestWilaya: number | undefined;
+
+    if (orderRes.status === "fulfilled" && orderRes.value.ok) {
+      try {
+        const orderJson = await orderRes.value.json();
+        const rows = Array.isArray(orderJson?.data) ? orderJson.data : [];
+        const matched =
+          rows.find((r: any) => String(r?.tracking || "").toLowerCase() === tracking.toLowerCase()) ||
+          rows[0];
+        if (matched) {
+          if (typeof matched.status === "string" && matched.status.trim()) {
+            orderStatus = matched.status.trim();
+          }
+          if (matched.client) orderRecipient = String(matched.client);
+          if (matched.wilaya_id) orderDestWilaya = Number(matched.wilaya_id);
+        }
+      } catch {
+        // Ignore JSON parse errors
+      }
     }
 
-    const activity: EcoTrackTrackingActivity[] = data.activity || [];
-    const latestStatus = activity.length > 0 ? activity[activity.length - 1].status : "registered";
+    let activity: EcoTrackTrackingActivity[] = [];
+    let trackingData: any = null;
+
+    if (trackingRes.status === "fulfilled" && trackingRes.value.ok) {
+      try {
+        const tJson = await trackingRes.value.json();
+        if (tJson && tJson.success !== false) {
+          trackingData = tJson;
+          activity = Array.isArray(tJson.activity) ? tJson.activity : [];
+        }
+      } catch {
+        // Ignore JSON parse errors
+      }
+    }
+
+    if (!orderStatus && !trackingData) {
+      return { success: false, error: `Erreur récupération suivi chez ${carrier.name}` };
+    }
+
+    const activityLatest = activity.length > 0 ? activity[activity.length - 1]?.status : undefined;
+    const directTrackingStatus =
+      typeof trackingData?.status === "string" &&
+      trackingData.status.trim() &&
+      trackingData.status !== "200"
+        ? trackingData.status.trim()
+        : undefined;
+
+    // Prioritize the exact dashboard status from /api/v1/get/orders
+    const latestStatus = orderStatus || directTrackingStatus || activityLatest || "prete_a_expedier";
 
     return {
       success: true,
-      recipientName: data.recipientName,
-      shippedBy: data.shippedBy || carrier.name,
-      originCity: data.originCity,
-      destLocationCity: data.destLocationCity,
+      recipientName: trackingData?.recipientName || orderRecipient,
+      shippedBy: trackingData?.shippedBy || carrier.name,
+      originCity: trackingData?.originCity,
+      destLocationCity: trackingData?.destLocationCity || orderDestWilaya,
       activity,
       latestStatus,
     };
@@ -405,6 +498,90 @@ export async function getEcoTrackTrackingInfo(
 }
 
 /**
+ * Bulk fetches live dashboard parcel statuses from Navex or Anderson EcoTrack.
+ * Primary: pages through GET /api/v1/get/orders (40 parcels/page, exact dashboard status),
+ * stopping as soon as all requested trackings are found.
+ * Fallback: queries /api/v1/get/orders?tracking=... for any older tracking not in the first pages.
+ */
+export async function fetchEcoTrackBulkStatuses(
+  trackings: string[],
+  carrierId: ShippingCarrierId = "navex"
+): Promise<Record<string, string>> {
+  const uniqueTrackings = Array.from(new Set(trackings.filter(Boolean)));
+  const results: Record<string, string> = {};
+  if (uniqueTrackings.length === 0) return results;
+
+  const carrier = await resolveCarrierConfig(carrierId);
+  if (!carrier.token) return results;
+
+  const headers = {
+    "Accept": "application/json",
+    "Authorization": `Bearer ${carrier.token}`,
+  };
+
+  // Map lowercase tracking -> original tracking string
+  const wantedMap = new Map<string, string>();
+  for (const t of uniqueTrackings) {
+    wantedMap.set(t.toLowerCase(), t);
+  }
+
+  // 1. Page through /api/v1/get/orders (40 orders per page, newest first)
+  const MAX_PAGES = 5;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    if (wantedMap.size === 0) break;
+    try {
+      const url = `${carrier.baseUrl}/api/v1/get/orders?api_token=${encodeURIComponent(carrier.token)}&page=${page}`;
+      const res = await fetch(url, {
+        headers,
+        cache: "no-store",
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) break;
+      const payload = await res.json();
+      const rows = Array.isArray(payload?.data) ? payload.data : [];
+
+      for (const row of rows) {
+        const rawTrk = typeof row?.tracking === "string" ? row.tracking.trim() : "";
+        const rawStatus = typeof row?.status === "string" ? row.status.trim() : "";
+        if (!rawTrk || !rawStatus) continue;
+
+        const originalKey = wantedMap.get(rawTrk.toLowerCase());
+        if (originalKey) {
+          results[originalKey] = rawStatus;
+          wantedMap.delete(rawTrk.toLowerCase());
+        }
+      }
+
+      const lastPage = Number(payload?.last_page || 1);
+      if (page >= lastPage || rows.length === 0) break;
+    } catch {
+      break;
+    }
+  }
+
+  // 2. Query any remaining older trackings directly via /api/v1/get/orders?tracking=...
+  const missing = Array.from(wantedMap.values());
+  const CONCURRENCY = 6;
+  for (let i = 0; i < missing.length; i += CONCURRENCY) {
+    const batch = missing.slice(i, i + CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map(async (trk) => {
+        const info = await getEcoTrackTrackingInfo(trk, carrierId);
+        return { trk, info };
+      })
+    );
+    for (const item of settled) {
+      if (item.status === "fulfilled" && item.value.info.success && item.value.info.latestStatus) {
+        results[item.value.trk] = item.value.info.latestStatus;
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
  * Deletes or cancels a shipment on EcoTrack
  */
 export async function deleteEcoTrackShipment(
@@ -412,7 +589,7 @@ export async function deleteEcoTrackShipment(
   carrierId: ShippingCarrierId = "navex"
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const carrier = getCarrierConfig(carrierId);
+    const carrier = await resolveCarrierConfig(carrierId);
     const res = await fetch(
       `${carrier.baseUrl}/api/v1/delete/order?tracking=${encodeURIComponent(tracking)}&api_token=${encodeURIComponent(carrier.token)}`,
       {
@@ -439,62 +616,161 @@ export async function deleteEcoTrackShipment(
 }
 
 /**
- * Status mapping from EcoTrack to readable French & Arabic labels and internal status
+ * Status mapping from EcoTrack to canonical carrier stage, readable French & Arabic labels, and internal order status
  */
 export function mapEcoTrackStatusToOrder(statusKey: string): {
+  stageKey: CarrierStageKey;
   internalStatus: "preparing" | "shipped" | "delivered" | "returned" | "cancelled";
   isPaid: boolean;
   labelFr: string;
   labelAr: string;
 } {
-  switch (statusKey) {
-    case "order_information_received_by_carrier":
+  const stageKey = normalizeEcoTrackStage(statusKey);
+  const stageDef = CARRIER_STAGE_MAP[stageKey];
+  const isPaid = isEcoTrackStatusPaid(statusKey);
+
+  const normalizedRaw = (statusKey || "").toLowerCase();
+  let internalStatus: "preparing" | "shipped" | "delivered" | "returned" | "cancelled" = "shipped";
+
+  if (stageKey === "livres") {
+    internalStatus = "delivered";
+  } else if (stageKey === "retours") {
+    internalStatus =
+      normalizedRaw.includes("annul") || normalizedRaw.includes("cancel")
+        ? "cancelled"
+        : "returned";
+  } else {
+    // Active carrier stages (prete_a_expedier .. en_livraison & suspendus) remain "shipped" internally
+    internalStatus = "shipped";
+  }
+
+  return {
+    stageKey,
+    internalStatus,
+    isPaid,
+    labelFr: stageDef.labelFr,
+    labelAr: stageDef.labelAr,
+  };
+}
+
+export interface EcoTrackWilayaFeeItem {
+  wilayaId: number;
+  homeFeeDZD: number;
+  stopDeskFeeDZD: number;
+}
+
+/**
+ * Fetches live delivery tariffs per wilaya from any EcoTrack carrier via GET /api/v1/get/fees
+ * and expands the 58 canonical EcoTrack wilayas to all 69 wilayas defined in ALGERIA_WILAYAS.
+ */
+export async function fetchEcoTrackCarrierFees(
+  carrierId: ShippingCarrierId
+): Promise<{
+  success: boolean;
+  carrierId?: string;
+  carrierName?: string;
+  ratesByWilayaCode?: Record<string, { homeFeeDZD: number; stopDeskFeeDZD: number }>;
+  canonicalCount?: number;
+  error?: string;
+}> {
+  try {
+    const carrier = await resolveCarrierConfig(carrierId);
+    if (!carrier.token || !carrier.baseUrl) {
       return {
-        internalStatus: "preparing",
-        isPaid: false,
-        labelFr: "Colis enregistré (Attente prise en charge)",
-        labelAr: "تم تسجيل الطرد (في انتظار الاستلام)",
+        success: false,
+        error: `Configuration API manquante pour ${carrier.name || carrierId}`,
       };
-    case "picked":
-    case "accepted_by_carrier":
+    }
+
+    const url = `${carrier.baseUrl}/api/v1/get/fees?api_token=${encodeURIComponent(carrier.token)}`;
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${carrier.token}`,
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
       return {
-        internalStatus: "shipped",
-        isPaid: false,
-        labelFr: "Pris en charge au Hub Navex",
-        labelAr: "تم استلام الطرد في مركز الفرز",
+        success: false,
+        error: data?.message || `Erreur HTTP ${res.status} lors de la récupération des tarifs ${carrier.name}`,
       };
-    case "dispatched_to_driver":
-    case "attempt_delivery":
+    }
+
+    const rawList: any[] = Array.isArray(data?.livraison)
+      ? data.livraison
+      : Array.isArray(data?.tarifs)
+      ? data.tarifs
+      : Array.isArray(data?.data)
+      ? data.data
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    if (rawList.length === 0) {
       return {
-        internalStatus: "shipped",
-        isPaid: false,
-        labelFr: "En cours de livraison avec le livreur",
-        labelAr: "الطرد في الطريق مع الموزع",
+        success: false,
+        error: `Aucun tarif trouvé chez ${carrier.name}. Vérifiez les tarifs dans votre compte EcoTrack.`,
       };
-    case "livred":
-    case "encaissed":
-    case "payed":
+    }
+
+    const canonicalMap = new Map<number, EcoTrackWilayaFeeItem>();
+    for (const item of rawList) {
+      const wid = Number(item?.wilaya_id ?? item?.wilaya ?? item?.id);
+      if (!Number.isFinite(wid) || wid < 1 || wid > 69) continue;
+
+      const rawHome =
+        item?.tarif ?? item?.home_price ?? item?.domicile ?? item?.price ?? item?.home;
+      const rawStopDesk =
+        item?.tarif_stopdesk ??
+        item?.stop_desk_price ??
+        item?.stopdesk_price ??
+        item?.stopdesk ??
+        rawHome;
+
+      const homeFeeDZD = Math.max(0, Math.round(Number(rawHome) || 0));
+      const stopDeskFeeDZD = Math.max(0, Math.round(Number(rawStopDesk) || homeFeeDZD));
+
+      canonicalMap.set(wid, { wilayaId: wid, homeFeeDZD, stopDeskFeeDZD });
+    }
+
+    if (canonicalMap.size === 0) {
       return {
-        internalStatus: "delivered",
-        isPaid: true,
-        labelFr: "Livré & Encaissé",
-        labelAr: "تم التسليم وتحصيل المبلغ",
+        success: false,
+        error: `Format de tarifs non reconnu depuis ${carrier.name}.`,
       };
-    case "return_asked":
-    case "return_in_transit":
-    case "Return_received":
-      return {
-        internalStatus: "returned",
-        isPaid: false,
-        labelFr: "Retour initié / En retour",
-        labelAr: "طرد راجع / قيد الإرجاع",
-      };
-    default:
-      return {
-        internalStatus: "shipped",
-        isPaid: false,
-        labelFr: statusKey,
-        labelAr: statusKey,
-      };
+    }
+
+    // Expand to all 69 wilayas in ALGERIA_WILAYAS (mapping 59..69 to canonical parent 1..58 if not directly listed)
+    const ratesByWilayaCode: Record<string, { homeFeeDZD: number; stopDeskFeeDZD: number }> = {};
+    for (const w of ALGERIA_WILAYAS) {
+      const numericCode = parseInt(w.code, 10);
+      const direct = canonicalMap.get(numericCode);
+      const canonical = canonicalMap.get(getEcoTrackWilayaCode(numericCode));
+      const matched = direct || canonical;
+      if (matched) {
+        ratesByWilayaCode[w.code] = {
+          homeFeeDZD: matched.homeFeeDZD,
+          stopDeskFeeDZD: matched.stopDeskFeeDZD,
+        };
+      }
+    }
+
+    return {
+      success: true,
+      carrierId: carrier.id,
+      carrierName: carrier.name,
+      ratesByWilayaCode,
+      canonicalCount: canonicalMap.size,
+    };
+  } catch (err: any) {
+    console.error("[fetchEcoTrackCarrierFees] Error:", err);
+    return {
+      success: false,
+      error: err?.message || "Erreur réseau lors de la récupération des tarifs EcoTrack.",
+    };
   }
 }

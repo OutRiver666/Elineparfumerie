@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { getStorefrontContent } from "@/lib/services/storefront-content.service";
 import { getTestimonials } from "@/lib/services/testimonials.service";
 import { TestimonialsSection } from "@/components/storefront/testimonials-section";
+import { ThemedHero } from "@/components/storefront/themed-hero";
+import { resolveStorefrontThemeId } from "@/lib/themes/storefront-themes";
 import {
   ArrowRight,
   Sparkles,
@@ -21,6 +23,8 @@ import {
   Instagram,
   CheckCircle2,
 } from "lucide-react";
+
+export const dynamic = "force-dynamic";
 
 interface HomePageProps {
   params: Promise<{ locale: string }>;
@@ -36,6 +40,7 @@ export default async function HomePage({ params }: HomePageProps) {
   const bestSellers = allProducts.filter((p) => p.isBestseller);
   const collections = await getCollections();
   const storefrontContent = await getStorefrontContent();
+  const activeThemeId = resolveStorefrontThemeId(storefrontContent.themeId);
   const hero = storefrontContent.hero;
   const gender = storefrontContent.gender;
   const collectionsContent = storefrontContent.collections;
@@ -92,101 +97,78 @@ export default async function HomePage({ params }: HomePageProps) {
     },
   ];
 
+  // Theme-specific UI layout tokens for non-hero sections
+  const genderCardRadius =
+    activeThemeId === "rose-de-grasse"
+      ? "rounded-t-[140px] rounded-b-[20px] border border-luxury-border/70"
+      : activeThemeId === "monochrome-editorial"
+      ? "rounded-none border border-black"
+      : activeThemeId === "azur-riviera"
+      ? "rounded-2xl border-2 border-sky-100 shadow-sm"
+      : activeThemeId === "oud-noir"
+      ? "rounded-[4px] border border-[#D4AF6A]/25"
+      : activeThemeId === "emeraude-imperiale"
+      ? "rounded-[4px] border border-[#C5A059]/35"
+      : activeThemeId === "midnight-sapphire"
+      ? "rounded-xl border border-sky-400/20"
+      : activeThemeId === "sahara-ambre"
+      ? "rounded-2xl border border-[#E2D0BB]"
+      : "rounded-[4px]";
+
+  const collectionCardRadius =
+    activeThemeId === "monochrome-editorial"
+      ? "rounded-none border border-black"
+      : activeThemeId === "rose-de-grasse"
+      ? "rounded-[24px]"
+      : activeThemeId === "azur-riviera" || activeThemeId === "sahara-ambre"
+      ? "rounded-2xl"
+      : activeThemeId === "midnight-sapphire"
+      ? "rounded-xl border border-sky-400/20"
+      : activeThemeId === "oud-noir"
+      ? "rounded-[4px] border border-[#D4AF6A]/25"
+      : "rounded-[6px]";
+
+  const isMonochrome = activeThemeId === "monochrome-editorial";
+  const isAzur = activeThemeId === "azur-riviera";
+  const isEmerald = activeThemeId === "emeraude-imperiale";
+  const isOudNoir = activeThemeId === "oud-noir";
+  const isMidnight = activeThemeId === "midnight-sapphire";
+
   return (
     <div className="space-y-24">
-      {/* 1. HERO SECTION */}
-      <section className="relative min-h-[82vh] flex items-center justify-center bg-luxury-secondary/60 overflow-hidden">
-        <div className="container mx-auto px-4 sm:px-6 py-16 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          {/* Left Text Column */}
-          <div className="space-y-6 text-center lg:text-left rtl:lg:text-right z-10">
-            <div className="inline-flex items-center space-x-2 rtl:space-x-reverse px-3 py-1 rounded-[3px] bg-luxury-surface text-luxury-accent text-[11px] uppercase tracking-widest font-semibold">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{locale === "ar" ? hero.badgeAr : hero.badgeFr}</span>
-            </div>
-
-            <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-medium text-luxury-text tracking-tight leading-[1.15]">
-              {locale === "ar" ? hero.titleAr : hero.titleFr}
-            </h1>
-
-            <p className="text-sm sm:text-base text-luxury-text-secondary max-w-lg leading-relaxed font-sans font-light">
-              {locale === "ar" ? hero.subtitleAr : hero.subtitleFr}
-            </p>
-
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start rtl:lg:justify-start gap-4">
-              <Link href={hero.primaryBtnLink.startsWith("http") ? hero.primaryBtnLink : `/${locale}${hero.primaryBtnLink.startsWith("/") ? hero.primaryBtnLink : `/${hero.primaryBtnLink}`}`}>
-                <Button size="lg" variant="default" className="w-full sm:w-auto">
-                  <span>{locale === "ar" ? hero.primaryBtnTextAr : hero.primaryBtnTextFr}</span>
-                  <ArrowRight className="w-4 h-4 ml-2 rtl:ml-0 rtl:mr-2" />
-                </Button>
-              </Link>
-              <Link href={hero.secondaryBtnLink.startsWith("http") ? hero.secondaryBtnLink : `/${locale}${hero.secondaryBtnLink.startsWith("/") ? hero.secondaryBtnLink : `/${hero.secondaryBtnLink}`}`}>
-                <Button size="lg" variant="outline" className="w-full sm:w-auto">
-                  <span>{locale === "ar" ? hero.secondaryBtnTextAr : hero.secondaryBtnTextFr}</span>
-                </Button>
-              </Link>
-            </div>
-
-            <div className="pt-4 flex items-center justify-center lg:justify-start rtl:lg:justify-start space-x-6 rtl:space-x-reverse text-xs text-luxury-text-muted">
-              <div>
-                <span className="font-semibold text-luxury-text block text-sm">58 Wilayas</span>
-                <span>{locale === "ar" ? "توصيل آمن" : "Livraison suivie"}</span>
-              </div>
-              <div className="h-6 w-px bg-luxury-border" />
-              <div>
-                <span className="font-semibold text-luxury-text block text-sm">COD</span>
-                <span>{locale === "ar" ? "الدفع عند الاستلام" : "Règlement à réception"}</span>
-              </div>
-              <div className="h-6 w-px bg-luxury-border" />
-              <div>
-                <span className="font-semibold text-luxury-text block text-sm">25ml — 100ml</span>
-                <span>{locale === "ar" ? "أحجام مستقلة" : "Formats ajustables"}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Hero Image */}
-          <div className="relative aspect-[4/5] w-full max-w-md mx-auto lg:max-w-none">
-            <div className="absolute inset-0 rounded-[6px] overflow-hidden bg-luxury-surface">
-              <Image
-                src={hero.imageUrl}
-                alt="Éline Parfumerie Haute Joaillerie Olfactive"
-                fill
-                priority
-                className="object-cover object-center"
-              />
-            </div>
-            {/* Subtle floating badge */}
-            <div className="absolute bottom-6 left-6 rtl:left-auto rtl:right-6 bg-white/95 backdrop-blur-md p-4 rounded-[4px] shadow-floating max-w-[220px]">
-              <span className="text-[10px] uppercase tracking-widest text-luxury-accent font-semibold block mb-1">
-                {locale === "ar" ? hero.floatingBadgeTopAr : hero.floatingBadgeTopFr}
-              </span>
-              <p className="font-serif text-sm font-medium text-luxury-text">
-                {locale === "ar" ? hero.floatingBadgeTitleAr : hero.floatingBadgeTitleFr}
-              </p>
-              <span className="text-[11px] text-luxury-text-secondary block mt-0.5">
-                {locale === "ar" ? hero.floatingBadgeSubAr : hero.floatingBadgeSubFr}
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* 1. DYNAMIC THEMED HERO SECTION */}
+      <ThemedHero themeId={activeThemeId} hero={hero} locale={locale} />
 
       {/* 2. SHOP BY GENDER */}
       <section className="container mx-auto px-4 sm:px-6">
-        <div className="text-center max-w-xl mx-auto mb-12">
-          <span className="text-[11px] uppercase tracking-widest text-luxury-accent font-semibold block mb-2">
-            {locale === "ar" ? gender.headerTagAr : gender.headerTagFr}
-          </span>
-          <h2 className="font-serif text-2xl sm:text-3xl font-medium text-luxury-text">
-            {locale === "ar" ? gender.headerTitleAr : gender.headerTitleFr}
-          </h2>
+        <div
+          className={
+            isMonochrome
+              ? "flex flex-col sm:flex-row sm:items-end justify-between border-b border-black pb-4 mb-10 gap-2"
+              : "text-center max-w-xl mx-auto mb-12"
+          }
+        >
+          <div>
+            <span className="text-[11px] uppercase tracking-widest text-luxury-accent font-semibold block mb-2">
+              {isMonochrome ? "01 / " : ""}
+              {locale === "ar" ? gender.headerTagAr : gender.headerTagFr}
+            </span>
+            <h2 className="font-serif text-2xl sm:text-3xl font-medium text-luxury-text">
+              {locale === "ar" ? gender.headerTitleAr : gender.headerTitleFr}
+            </h2>
+          </div>
+          {isMonochrome && (
+            <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-500">
+              HOMME • FEMME • MIXTE
+            </span>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Men */}
           <Link
             href={gender.men.link.startsWith("http") ? gender.men.link : `/${locale}${gender.men.link.startsWith("/") ? gender.men.link : `/${gender.men.link}`}`}
-            className="group relative aspect-[3/4] overflow-hidden rounded-[4px] bg-luxury-secondary flex items-end p-8"
+            className={`group relative aspect-[3/4] overflow-hidden bg-luxury-secondary flex items-end p-8 ${genderCardRadius}`}
           >
             <Image
               src={gender.men.imageUrl}
@@ -211,7 +193,7 @@ export default async function HomePage({ params }: HomePageProps) {
           {/* Women */}
           <Link
             href={gender.women.link.startsWith("http") ? gender.women.link : `/${locale}${gender.women.link.startsWith("/") ? gender.women.link : `/${gender.women.link}`}`}
-            className="group relative aspect-[3/4] overflow-hidden rounded-[4px] bg-luxury-secondary flex items-end p-8"
+            className={`group relative aspect-[3/4] overflow-hidden bg-luxury-secondary flex items-end p-8 ${genderCardRadius}`}
           >
             <Image
               src={gender.women.imageUrl}
@@ -236,7 +218,7 @@ export default async function HomePage({ params }: HomePageProps) {
           {/* Unisex */}
           <Link
             href={gender.unisex.link.startsWith("http") ? gender.unisex.link : `/${locale}${gender.unisex.link.startsWith("/") ? gender.unisex.link : `/${gender.unisex.link}`}`}
-            className="group relative aspect-[3/4] overflow-hidden rounded-[4px] bg-luxury-secondary flex items-end p-8"
+            className={`group relative aspect-[3/4] overflow-hidden bg-luxury-secondary flex items-end p-8 ${genderCardRadius}`}
           >
             <Image
               src={gender.unisex.imageUrl}
@@ -262,9 +244,14 @@ export default async function HomePage({ params }: HomePageProps) {
 
       {/* 3. FEATURED PERFUMES */}
       <section className="container mx-auto px-4 sm:px-6">
-        <div className="flex flex-col sm:flex-row items-center justify-between mb-10 pb-4 border-b border-luxury-border/30">
+        <div
+          className={`flex flex-col sm:flex-row items-center justify-between mb-10 pb-4 border-b ${
+            isMonochrome ? "border-black" : "border-luxury-border/40"
+          }`}
+        >
           <div>
             <span className="text-[11px] uppercase tracking-widest text-luxury-accent font-semibold block mb-1">
+              {isMonochrome ? "02 / " : ""}
               {locale === "ar" ? "مختارات حصرية" : "Sélection Maître-Parfumeur"}
             </span>
             <h2 className="font-serif text-2xl sm:text-3xl font-medium text-luxury-text">
@@ -291,9 +278,14 @@ export default async function HomePage({ params }: HomePageProps) {
 
       {/* 5. SEASONAL COLLECTIONS SHOWCASE */}
       <section className="container mx-auto px-4 sm:px-6">
-        <div className="flex items-center justify-between mb-8 pb-3 border-b border-luxury-border/30">
+        <div
+          className={`flex items-center justify-between mb-8 pb-3 border-b ${
+            isMonochrome ? "border-black" : "border-luxury-border/40"
+          }`}
+        >
           <div>
             <span className="text-[11px] uppercase tracking-widest text-luxury-accent font-semibold block mb-1">
+              {isMonochrome ? "03 / " : ""}
               {locale === "ar" ? collectionsContent.headerTagAr : collectionsContent.headerTagFr}
             </span>
             <h2 className="font-serif text-2xl sm:text-3xl font-medium text-luxury-text">
@@ -313,7 +305,7 @@ export default async function HomePage({ params }: HomePageProps) {
             <Link
               key={idx}
               href={formatLocalizedHref(card.linkUrl || "/collections")}
-              className="group relative rounded-[6px] overflow-hidden bg-luxury-surface min-h-[320px] flex items-end p-8"
+              className={`group relative overflow-hidden bg-luxury-surface min-h-[320px] flex items-end p-8 ${collectionCardRadius}`}
             >
               {isValidImageSrc(card.imageUrl) ? (
                 <Image
@@ -343,41 +335,103 @@ export default async function HomePage({ params }: HomePageProps) {
         </div>
       </section>
 
-      {/* 5. CUSTOM PACK PROMOTIONAL SECTION */}
-      <section className="bg-luxury-surface py-20">
+      {/* 5. CUSTOM PACK PROMOTIONAL SECTION (Theme-Adapted Showcase) */}
+      <section
+        className={
+          isAzur
+            ? "bg-[#0A1E3F] text-white py-20 border-y border-sky-400/20"
+            : isEmerald
+            ? "bg-[#0C2A22] text-[#FBF8F1] py-20 border-y border-[#C5A059]/30"
+            : isOudNoir
+            ? "bg-[#141316] py-20 border-y border-[#D4AF6A]/20"
+            : isMidnight
+            ? "bg-[#0E1F3D] py-20 border-y border-sky-400/20"
+            : isMonochrome
+            ? "bg-white py-20 border-y border-black"
+            : "bg-luxury-surface py-20"
+        }
+      >
         <div className="container mx-auto px-4 sm:px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-6 text-center lg:text-left rtl:lg:text-right">
-            <span className="inline-flex items-center space-x-1.5 rtl:space-x-reverse px-2.5 py-1 rounded-[3px] bg-white text-luxury-accent text-[11px] uppercase tracking-wider font-semibold">
+            <span
+              className={`inline-flex items-center space-x-1.5 rtl:space-x-reverse px-3 py-1 text-[11px] uppercase tracking-wider font-semibold ${
+                isAzur
+                  ? "rounded-full bg-sky-400/15 text-sky-300 border border-sky-400/30"
+                  : isEmerald
+                  ? "rounded-[3px] bg-[#081F19] text-[#DFC07D] border border-[#C5A059]/40"
+                  : isMonochrome
+                  ? "rounded-none bg-black text-white"
+                  : "rounded-[var(--theme-btn-radius,4px)] bg-luxury-bg text-luxury-accent border border-luxury-border/50"
+              }`}
+            >
               <Box className="w-3.5 h-3.5" />
               <span>{locale === "ar" ? customPackContent?.badgeAr : customPackContent?.badgeFr}</span>
             </span>
 
-            <h2 className="font-serif text-3xl sm:text-4xl font-medium text-luxury-text leading-tight">
+            <h2
+              className={`font-serif text-3xl sm:text-4xl font-medium leading-tight ${
+                isAzur || isEmerald ? "text-white" : "text-luxury-text"
+              }`}
+            >
               {locale === "ar" ? customPackContent?.titleAr : customPackContent?.titleFr}
             </h2>
 
-            <p className="text-sm text-luxury-text-secondary leading-relaxed max-w-md">
+            <p
+              className={`text-sm leading-relaxed max-w-md ${
+                isAzur
+                  ? "text-blue-100/80"
+                  : isEmerald
+                  ? "text-[#C8D8D1]"
+                  : "text-luxury-text-secondary"
+              }`}
+            >
               {locale === "ar" ? customPackContent?.descriptionAr : customPackContent?.descriptionFr}
             </p>
 
-            <div className="space-y-3 pt-2 text-xs text-luxury-text-secondary">
-              <div className="flex items-center space-x-3 rtl:space-x-reverse">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-luxury-text text-white text-[10px] font-bold">1</span>
-                <span>{locale === "ar" ? customPackContent?.step1Ar : customPackContent?.step1Fr}</span>
-              </div>
-              <div className="flex items-center space-x-3 rtl:space-x-reverse">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-luxury-text text-white text-[10px] font-bold">2</span>
-                <span>{locale === "ar" ? customPackContent?.step2Ar : customPackContent?.step2Fr}</span>
-              </div>
-              <div className="flex items-center space-x-3 rtl:space-x-reverse">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-luxury-text text-white text-[10px] font-bold">3</span>
-                <span>{locale === "ar" ? customPackContent?.step3Ar : customPackContent?.step3Fr}</span>
-              </div>
+            <div
+              className={`space-y-3 pt-2 text-xs ${
+                isAzur
+                  ? "text-blue-100/90"
+                  : isEmerald
+                  ? "text-[#D9E5DF]"
+                  : "text-luxury-text-secondary"
+              }`}
+            >
+              {[
+                locale === "ar" ? customPackContent?.step1Ar : customPackContent?.step1Fr,
+                locale === "ar" ? customPackContent?.step2Ar : customPackContent?.step2Fr,
+                locale === "ar" ? customPackContent?.step3Ar : customPackContent?.step3Fr,
+              ].map((stepText, idx) => (
+                <div key={idx} className="flex items-center space-x-3 rtl:space-x-reverse">
+                  <span
+                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold shrink-0 ${
+                      isAzur
+                        ? "bg-sky-400 text-[#0A1E3F]"
+                        : isEmerald
+                        ? "bg-[#C5A059] text-[#0C2A22]"
+                        : "bg-luxury-text text-luxury-bg"
+                    }`}
+                  >
+                    {idx + 1}
+                  </span>
+                  <span>{stepText}</span>
+                </div>
+              ))}
             </div>
 
             <div className="pt-4">
               <Link href={formatLocalizedHref(customPackContent?.btnLink || "/packs/builder")}>
-                <Button size="lg" variant="accent">
+                <Button
+                  size="lg"
+                  variant={isAzur || isEmerald ? "default" : "accent"}
+                  className={
+                    isAzur
+                      ? "bg-sky-400 hover:bg-sky-300 text-[#0A1E3F] font-bold rounded-full px-8"
+                      : isEmerald
+                      ? "bg-[#C5A059] hover:bg-[#B28E49] text-[#0C2A22] font-bold px-8"
+                      : undefined
+                  }
+                >
                   <span>{locale === "ar" ? customPackContent?.btnTextAr : customPackContent?.btnTextFr}</span>
                   <ArrowRight className="w-4 h-4 ml-2 rtl:ml-0 rtl:mr-2" />
                 </Button>
@@ -385,7 +439,17 @@ export default async function HomePage({ params }: HomePageProps) {
             </div>
           </div>
 
-          <div className="relative aspect-[4/3] w-full rounded-[6px] overflow-hidden bg-luxury-secondary shadow-luxury">
+          <div
+            className={`relative aspect-[4/3] w-full overflow-hidden bg-luxury-secondary shadow-luxury ${
+              isMonochrome
+                ? "rounded-none border border-black"
+                : isAzur
+                ? "rounded-2xl border-2 border-sky-400/25"
+                : isEmerald
+                ? "rounded-[4px] border border-[#C5A059]/45"
+                : "rounded-[var(--theme-card-radius,6px)]"
+            }`}
+          >
             {isValidImageSrc(customPackContent?.imageUrl) ? (
               <Image
                 src={customPackContent.imageUrl.trim()}
@@ -403,13 +467,22 @@ export default async function HomePage({ params }: HomePageProps) {
 
       {/* 6. BEST SELLERS */}
       <section className="container mx-auto px-4 sm:px-6">
-        <div className="text-center max-w-xl mx-auto mb-12">
-          <span className="text-[11px] uppercase tracking-widest text-luxury-accent font-semibold block mb-2">
-            {locale === "ar" ? "الأكثر طلباً" : "Incontournables"}
-          </span>
-          <h2 className="font-serif text-2xl sm:text-3xl font-medium text-luxury-text">
-            {locale === "ar" ? "عطور أثبتت جدارتها ونالت إعجاب زبائننا" : "Les Créations Plébiscitées"}
-          </h2>
+        <div
+          className={
+            isMonochrome
+              ? "flex items-end justify-between border-b border-black pb-4 mb-10"
+              : "text-center max-w-xl mx-auto mb-12"
+          }
+        >
+          <div>
+            <span className="text-[11px] uppercase tracking-widest text-luxury-accent font-semibold block mb-2">
+              {isMonochrome ? "04 / " : ""}
+              {locale === "ar" ? "الأكثر طلباً" : "Incontournables"}
+            </span>
+            <h2 className="font-serif text-2xl sm:text-3xl font-medium text-luxury-text">
+              {locale === "ar" ? "عطور أثبتت جدارتها ونالت إعجاب زبائننا" : "Les Créations Plébiscitées"}
+            </h2>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-8">
@@ -442,7 +515,7 @@ export default async function HomePage({ params }: HomePageProps) {
           {instagramShots.map((shot) => (
             <div
               key={shot.id}
-              className="relative aspect-square rounded-[4px] overflow-hidden bg-luxury-secondary group"
+              className="relative aspect-square rounded-[var(--theme-card-radius,6px)] overflow-hidden bg-luxury-secondary group"
             >
               <Image
                 src={shot.img}
@@ -461,7 +534,19 @@ export default async function HomePage({ params }: HomePageProps) {
 
       {/* 9. ARTISANAL COMMITMENT PILLARS */}
       <section className="container mx-auto px-4 sm:px-6 pb-8">
-        <div className="p-10 sm:p-14 rounded-[6px] bg-luxury-secondary/80 grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
+        <div
+          className={`p-10 sm:p-14 grid grid-cols-1 md:grid-cols-3 gap-8 text-center ${
+            isMonochrome
+              ? "rounded-none border border-black bg-white"
+              : isAzur
+              ? "rounded-2xl bg-[#EFF6FF] border border-sky-200/80"
+              : isOudNoir
+              ? "rounded-[4px] bg-[#141316] border border-[#D4AF6A]/20"
+              : isMidnight
+              ? "rounded-xl bg-[#0E1F3D] border border-sky-400/20"
+              : "rounded-[var(--theme-card-radius,6px)] bg-luxury-secondary/80 border border-luxury-border/40"
+          }`}
+        >
           <div className="space-y-2">
             <div className="text-3xl font-serif font-medium text-luxury-accent">100%</div>
             <h4 className="font-serif text-base font-medium text-luxury-text">

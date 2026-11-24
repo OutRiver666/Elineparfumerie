@@ -2,7 +2,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ALGERIA_WILAYAS, getWilayaByCode } from "@/lib/data/algeria-locations";
 import { PlaceOrderPayload } from "@/lib/validations/checkout.schema";
 import { OrderStatus } from "@/types/database.types";
-import { getEcoTrackLabelUrl } from "@/lib/services/ecotrack.service";
+import { buildEcoTrackLabelUrl } from "@/lib/services/ecotrack.service";
+import { getAllCarriersServer } from "@/lib/services/carriers.service";
 
 export interface ServerOrderQuote {
   subtotalDZD: number;
@@ -150,9 +151,10 @@ export async function calculateServerOrderQuote(
           .eq("type", "custom")
           .eq("required_bottles_count", bottleCount)
           .eq("is_active", true)
+          .order("updated_at", { ascending: false })
           .limit(1)
-          .single();
-        if (matchedTier?.discount_percentage) {
+          .maybeSingle();
+        if (matchedTier?.discount_percentage !== undefined && matchedTier?.discount_percentage !== null) {
           tierDiscountPct = Number(matchedTier.discount_percentage);
         }
       } catch {
@@ -319,8 +321,10 @@ export interface AdminOrder {
   deliveryService?: string | null;
   trackingCode?: string | null;
   shippingLabelUrl?: string | null;
+  shippingPortalUrl?: string | null;
   shippingStatus?: string | null;
-  shippingCarrier?: "navex" | "anderson";
+  shippingSyncedAt?: string | null;
+  shippingCarrier?: string;
   createdAt: string;
   notes?: string | null;
   callAttempts?: number;
@@ -352,6 +356,9 @@ export async function getOrders(): Promise<AdminOrder[]> {
       return [];
     }
 
+    const allCarriers = await getAllCarriersServer();
+    const defaultCarrier = allCarriers.find((c) => c.isActive) || allCarriers[0];
+
     return (dbOrders as any[]).map((o) => {
       const items = (o.order_items && o.order_items.length > 0)
         ? o.order_items.map((oi: any) => ({
@@ -373,24 +380,33 @@ export async function getOrders(): Promise<AdminOrder[]> {
 
       // Parse tracking number and carrier from column or delivery_notes
       let tracking = o.tracking_number || o.tracking_code || null;
-      let shippingCarrier: "navex" | "anderson" = "navex";
-
-      if (o.shipping_provider?.toLowerCase().includes("anderson")) {
-        shippingCarrier = "anderson";
-      }
+      let carrierIdRaw: string = "";
 
       let callAttempts = 0;
       let lastAttemptAt: string | null = null;
+      let shippingStatus: string | null = o.shipping_status || null;
+      let shippingSyncedAt: string | null = o.shipping_synced_at || null;
 
       if (o.delivery_notes) {
-        const matchWithCarrier = o.delivery_notes.match(/\[ECOTRACK:(anderson|navex):([A-Za-z0-9_-]+)\]/i);
+        const matchWithCarrier = o.delivery_notes.match(/\[ECOTRACK:([a-z0-9_-]+):([A-Za-z0-9_-]+)\]/i);
         if (matchWithCarrier) {
-          shippingCarrier = matchWithCarrier[1].toLowerCase() as "navex" | "anderson";
+          carrierIdRaw = matchWithCarrier[1].toLowerCase();
           tracking = matchWithCarrier[2];
         } else {
           const matchSimple = o.delivery_notes.match(/\[ECOTRACK:([A-Za-z0-9_-]+)\]/);
           if (matchSimple) {
             tracking = matchSimple[1];
+          }
+        }
+
+        // Parse embedded carrier sync status fallback: [SHIP_STATUS:vers_hub:2026-11-23T...]
+        if (!shippingStatus) {
+          const matchShipStatus = o.delivery_notes.match(/\[SHIP_STATUS:([^:\]]+)(?::([^\]]+))?\]/i);
+          if (matchShipStatus) {
+            shippingStatus = matchShipStatus[1].trim();
+            if (!shippingSyncedAt && matchShipStatus[2]) {
+              shippingSyncedAt = matchShipStatus[2].trim();
+            }
           }
         }
 
@@ -402,15 +418,35 @@ export async function getOrders(): Promise<AdminOrder[]> {
         }
       }
 
+      // Resolve carrier record from dynamic registry
+      const providerNeedle = (o.shipping_provider || "").toLowerCase();
+      const matchedCarrier =
+        (carrierIdRaw && allCarriers.find((c) => c.id.toLowerCase() === carrierIdRaw)) ||
+        (providerNeedle &&
+          allCarriers.find(
+            (c) =>
+              c.id.toLowerCase() === providerNeedle ||
+              c.name.toLowerCase() === providerNeedle ||
+              providerNeedle.includes(c.id.toLowerCase()) ||
+              providerNeedle.includes(c.shortName.toLowerCase())
+          )) ||
+        defaultCarrier;
+
+      const shippingCarrier = carrierIdRaw || matchedCarrier?.id || "navex";
+
       const shippingLabelUrl =
-        o.shipping_label_url || (tracking ? getEcoTrackLabelUrl(tracking, shippingCarrier) : null);
+        o.shipping_label_url ||
+        (tracking && matchedCarrier
+          ? buildEcoTrackLabelUrl(tracking, matchedCarrier.baseUrl, matchedCarrier.apiToken)
+          : null);
+      const shippingPortalUrl =
+        tracking && matchedCarrier
+          ? `${matchedCarrier.portalUrl}${encodeURIComponent(tracking)}`
+          : null;
       const deliveryService =
         o.shipping_provider ||
-        (tracking
-          ? shippingCarrier === "anderson"
-            ? "Anderson Logistique"
-            : "Navex Delivery"
-          : "Navex Delivery");
+        matchedCarrier?.name ||
+        "Navex Delivery";
 
       const wilayaData = getWilayaByCode(o.wilaya_code);
       const wilayaNameFr = wilayaData?.name_fr || o.wilaya_code;
@@ -438,7 +474,9 @@ export async function getOrders(): Promise<AdminOrder[]> {
         deliveryService,
         trackingCode: tracking,
         shippingLabelUrl,
-        shippingStatus: o.shipping_status || null,
+        shippingPortalUrl,
+        shippingStatus,
+        shippingSyncedAt,
         shippingCarrier,
         createdAt: o.created_at,
         notes: o.delivery_notes,

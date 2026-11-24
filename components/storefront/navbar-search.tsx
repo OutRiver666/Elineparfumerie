@@ -247,7 +247,7 @@ export function NavbarSearch({
   // ── MOBILE FULL-WIDTH SEARCH PANEL ───────────────────────────────────────
   if (variant === "mobile-panel") {
     return (
-      <div ref={containerRef} className="md:hidden border-t border-luxury-border/30 bg-white px-3 py-2.5">
+      <div ref={containerRef} className="md:hidden border-t border-luxury-border/30 bg-luxury-bg px-3 py-2.5">
         <div className="relative flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-luxury-text-muted absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -263,7 +263,7 @@ export function NavbarSearch({
               placeholder={
                 isAr ? "ابحث عن عطرك المفضل..." : "Rechercher un parfum (ex: Oud)..."
               }
-              className="w-full h-10 ps-9 pe-8 text-xs bg-luxury-secondary/50 border border-luxury-border/50 rounded-[5px] text-luxury-text placeholder:text-luxury-text-muted focus:outline-none focus:bg-white focus:border-luxury-accent focus:ring-1 focus:ring-luxury-accent transition-all"
+              className="w-full h-10 ps-9 pe-8 text-xs bg-luxury-secondary/50 border border-luxury-border/50 rounded-[5px] text-luxury-text placeholder:text-luxury-text-muted focus:outline-none focus:bg-luxury-bg focus:border-luxury-accent focus:ring-1 focus:ring-luxury-accent transition-all"
             />
             {query && (
               <button
@@ -292,7 +292,7 @@ export function NavbarSearch({
         </div>
 
         {/* Instant Results */}
-        <div className="mt-2.5 rounded-[6px] border border-luxury-border/40 bg-white shadow-card overflow-hidden">
+        <div className="mt-2.5 rounded-[6px] border border-luxury-border/40 bg-luxury-bg shadow-card overflow-hidden">
           {renderResultsList()}
         </div>
       </div>
@@ -317,7 +317,7 @@ export function NavbarSearch({
           onKeyDown={handleKeyDown}
           placeholder={isAr ? "ابحث عن عطر..." : "Rechercher un parfum..."}
           aria-label={isAr ? "البحث عن العطور" : "Rechercher un parfum"}
-          className="w-full h-9 ps-9 pe-7 text-xs bg-luxury-secondary/50 border border-luxury-border/50 rounded-full text-luxury-text placeholder:text-luxury-text-muted focus:outline-none focus:bg-white focus:border-luxury-accent focus:ring-1 focus:ring-luxury-accent transition-all"
+          className="w-full h-9 ps-9 pe-7 text-xs bg-luxury-secondary/50 border border-luxury-border/50 rounded-full text-luxury-text placeholder:text-luxury-text-muted focus:outline-none focus:bg-luxury-bg focus:border-luxury-accent focus:ring-1 focus:ring-luxury-accent transition-all"
         />
         {query && (
           <button
@@ -337,7 +337,7 @@ export function NavbarSearch({
 
       {/* Live Dropdown Results */}
       {isOpen && (
-        <div className="absolute end-0 top-[calc(100%+8px)] w-80 lg:w-96 rounded-[8px] border border-luxury-border/40 bg-white shadow-[0_14px_40px_-10px_rgba(0,0,0,0.16)] overflow-hidden z-50">
+        <div className="absolute end-0 top-[calc(100%+8px)] w-80 lg:w-96 rounded-[8px] border border-luxury-border/40 bg-luxury-bg shadow-[0_14px_40px_-10px_rgba(0,0,0,0.22)] overflow-hidden z-50">
           {renderResultsList()}
         </div>
       )}

@@ -105,8 +105,12 @@ export function PackBuilderClient({
       );
       return;
     }
-    const variant =
-      perfume.variants.find((v) => v.size === "50ml") || perfume.variants[0];
+    const eligibleVariants =
+      selectedTier.allowedSizes && selectedTier.allowedSizes.length > 0
+        ? perfume.variants.filter((v) => selectedTier.allowedSizes.includes(v.size))
+        : perfume.variants;
+    const pool = eligibleVariants.length > 0 ? eligibleVariants : perfume.variants;
+    const variant = pool.find((v) => v.size === "50ml") || pool[0];
 
     setSelectedItems([...selectedItems, { perfume, variant }]);
     toast.success(
@@ -351,19 +355,29 @@ export function PackBuilderClient({
                   {/* Bottle size picker inside slot */}
                   <div className="flex items-center justify-between pt-1">
                     <div className="flex gap-1">
-                      {item.perfume.variants.map((v) => (
-                        <button
-                          key={v.id}
-                          onClick={() => handleSizeChange(slotIdx, v)}
-                          className={`text-[9px] px-1.5 py-0.5 rounded-[2px] font-medium transition-colors ${
-                            v.id === item.variant.id
-                              ? "bg-luxury-text text-white"
-                              : "bg-luxury-secondary text-luxury-text-secondary hover:bg-luxury-surface"
-                          }`}
-                        >
-                          {v.size}
-                        </button>
-                      ))}
+                      {(() => {
+                        const eligible =
+                          selectedTier.allowedSizes && selectedTier.allowedSizes.length > 0
+                            ? item.perfume.variants.filter((v) =>
+                                selectedTier.allowedSizes.includes(v.size)
+                              )
+                            : item.perfume.variants;
+                        const displayVariants =
+                          eligible.length > 0 ? eligible : item.perfume.variants;
+                        return displayVariants.map((v) => (
+                          <button
+                            key={v.id}
+                            onClick={() => handleSizeChange(slotIdx, v)}
+                            className={`text-[9px] px-1.5 py-0.5 rounded-[2px] font-medium transition-colors ${
+                              v.id === item.variant.id
+                                ? "bg-luxury-text text-white"
+                                : "bg-luxury-secondary text-luxury-text-secondary hover:bg-luxury-surface"
+                            }`}
+                          >
+                            {v.size}
+                          </button>
+                        ));
+                      })()}
                     </div>
                     <span className="text-xs font-semibold text-luxury-text">
                       {formatPrice(item.variant.priceDZD, locale)}

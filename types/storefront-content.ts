@@ -1,3 +1,5 @@
+import type { StorefrontThemeId } from "@/lib/themes/storefront-themes";
+
 export interface HeroSectionContent {
   badgeFr: string;
   badgeAr: string;
@@ -110,6 +112,7 @@ export interface CustomPackSectionContent {
 }
 
 export interface StorefrontContent {
+  themeId?: StorefrontThemeId;
   hero: HeroSectionContent;
   gender: GenderSectionContent;
   seasons: SeasonSectionContent;

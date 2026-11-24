@@ -5,7 +5,14 @@ import { Locale } from "@/lib/i18n";
 import { CartProvider } from "@/lib/cart-context";
 import { getStoreSettings } from "@/lib/services/settings.service";
 import { getProducts } from "@/lib/services/products.service";
+import { getStorefrontContent } from "@/lib/services/storefront-content.service";
+import {
+  resolveStorefrontThemeId,
+  STOREFRONT_THEME_MAP,
+} from "@/lib/themes/storefront-themes";
 import type { NavbarSearchProduct } from "@/components/storefront/navbar-search";
+
+export const dynamic = "force-dynamic";
 
 interface StorefrontLayoutProps {
   children: React.ReactNode;
@@ -18,10 +25,14 @@ export default async function StorefrontLayout({
 }: StorefrontLayoutProps) {
   const resolved = await params;
   const locale = (resolved.locale as Locale) || "fr";
-  const [storeSettings, products] = await Promise.all([
+  const [storeSettings, products, storefrontContent] = await Promise.all([
     getStoreSettings(),
     getProducts(),
+    getStorefrontContent(),
   ]);
+
+  const activeThemeId = resolveStorefrontThemeId(storefrontContent.themeId);
+  const activeTheme = STOREFRONT_THEME_MAP[activeThemeId];
 
   const searchableProducts: NavbarSearchProduct[] = products.map((p) => {
     const prices = p.variants.map((v) => v.priceDZD).filter((n) => n > 0);
@@ -41,10 +52,14 @@ export default async function StorefrontLayout({
 
   return (
     <CartProvider>
-      <div className="flex min-h-screen flex-col">
-        <Navbar locale={locale} products={searchableProducts} />
+      <div
+        className="storefront-theme flex min-h-screen flex-col bg-luxury-bg text-luxury-text transition-colors duration-300"
+        data-theme={activeThemeId}
+        data-theme-mode={activeTheme.mode}
+      >
+        <Navbar locale={locale} products={searchableProducts} themeId={activeThemeId} />
         <main className="flex-1">{children}</main>
-        <Footer locale={locale} settings={storeSettings} />
+        <Footer locale={locale} settings={storeSettings} themeId={activeThemeId} />
       </div>
     </CartProvider>
   );

@@ -1,4 +1,5 @@
 {
+  "themeId": "atelier-ivoire",
   "hero": {
     "badgeFr": "Haute Parfumerie Artisanale d'Algérie",
     "badgeAr": "صناعة عطور يدوية فاخرة في الجزائر",
@@ -165,5 +166,5 @@
     "btnLink": "/packs/builder",
     "imageUrl": "https://i.pinimg.com/1200x/f2/d1/16/f2d116382a82b5b1abb985e516fe068a.jpg"
   },
-  "updatedAt": "2026-11-23T00:18:47.580Z"
+  "updatedAt": "2026-11-24T02:38:51.438Z"
 }

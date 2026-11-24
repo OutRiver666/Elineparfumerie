@@ -1,3 +1,6 @@
+export type DeliveryPricingMode = "manual" | "carrier";
+export type DeliveryPricingTariffType = "home" | "stop_desk";
+
 export interface StoreSettings {
   brandName: string;
   contactPhone: string;
@@ -8,6 +11,10 @@ export interface StoreSettings {
   pack3DiscountPct: number;
   pack5DiscountPct: number;
   pack10DiscountPct: number;
+  deliveryPricingMode?: DeliveryPricingMode;
+  deliveryPricingCarrierId?: string | null;
+  deliveryPricingTariffType?: DeliveryPricingTariffType;
+  deliveryPricingSyncedAt?: string | null;
   updatedAt?: string;
 }
 
@@ -40,4 +47,8 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   pack3DiscountPct: 15,
   pack5DiscountPct: 20,
   pack10DiscountPct: 25,
+  deliveryPricingMode: "manual",
+  deliveryPricingCarrierId: null,
+  deliveryPricingTariffType: "home",
+  deliveryPricingSyncedAt: null,
 };

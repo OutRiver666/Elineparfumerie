@@ -92,7 +92,7 @@ export function ProductCard({ product, locale = "fr" }: ProductCardProps) {
   return (
     <div className="group flex flex-col transition-all duration-300">
       {/* Product Image Area */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[4px] bg-luxury-secondary">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[var(--theme-card-radius,6px)] bg-luxury-secondary border border-luxury-border/30">
         <Link href={`/${locale}/shop/${product.slug}`} className="block h-full w-full">
           <img
             src={currentImgSrc}
@@ -137,7 +137,7 @@ export function ProductCard({ product, locale = "fr" }: ProductCardProps) {
               e.stopPropagation();
               setQuickViewOpen(true);
             }}
-            className="w-full bg-white/95 text-luxury-text hover:bg-white text-[11px] font-medium shadow-floating"
+            className="w-full bg-luxury-bg/95 text-luxury-text hover:bg-luxury-bg border border-luxury-border/40 text-[11px] font-medium shadow-floating"
           >
             <Eye className="w-3.5 h-3.5 mr-1.5 rtl:mr-0 rtl:ml-1.5" />
             {dict.shop.viewDetails}
