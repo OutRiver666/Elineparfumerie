@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { StorefrontContent } from "@/types/storefront-content";
 import {
-  getStorefrontContent,
+  getStorefrontContentFresh,
   saveStorefrontContent,
   resetStorefrontContentToDefault,
 } from "@/lib/services/storefront-content.service";
@@ -145,7 +145,7 @@ export async function setStorefrontThemeAction(
     await requireStaff(locale);
 
     const safeThemeId = resolveStorefrontThemeId(themeId);
-    const current = await getStorefrontContent();
+    const current = await getStorefrontContentFresh();
     const result = await saveStorefrontContent({
       ...current,
       themeId: safeThemeId,
@@ -155,6 +155,7 @@ export async function setStorefrontThemeAction(
       return { success: false, error: result.error };
     }
 
+    revalidatePath("/", "layout");
     revalidatePath("/fr", "layout");
     revalidatePath("/ar", "layout");
     revalidatePath("/fr");

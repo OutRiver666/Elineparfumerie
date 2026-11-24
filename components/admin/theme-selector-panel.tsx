@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Locale } from "@/lib/i18n";
 import {
   STOREFRONT_THEMES,
@@ -300,6 +301,7 @@ export function ThemeSelectorPanel({
   locale,
 }: ThemeSelectorPanelProps) {
   const isAr = locale === "ar";
+  const router = useRouter();
   const [applyingId, setApplyingId] = useState<StorefrontThemeId | null>(null);
 
   const activeTheme =
@@ -312,6 +314,7 @@ export function ThemeSelectorPanel({
       const res = await setStorefrontThemeAction(themeId, locale);
       if (res.success) {
         onThemeApplied(themeId);
+        router.refresh();
         const chosen = STOREFRONT_THEMES.find((t) => t.id === themeId);
         toast.success(
           isAr

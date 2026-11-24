@@ -3,12 +3,45 @@ import { createAdminClient } from "@/lib/supabase/admin";
 const CONFIG_BUCKET = "storefront";
 
 /**
- * Reads a JSON configuration file directly from Supabase Storage (bypasses public CDN cache).
- * Works reliably on serverless read-only filesystems like Vercel (/var/task).
+ * Reads a JSON configuration file directly from Supabase Storage with strict cache-busting.
+ * Uses a unique timestamp query param + no-store fetch so Vercel / Cloudflare / Next.js
+ * NEVER serve a stale cached version after an overwrite.
  */
 export async function readJsonFromSupabaseStorage<T = any>(
   storagePath: string
 ): Promise<T | null> {
+  const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "");
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+  // 1. Direct cache-busted authenticated GET to Supabase Storage origin
+  if (supabaseUrl && serviceRoleKey) {
+    try {
+      const cleanPath = storagePath.replace(/^\/+/, "");
+      const url = `${supabaseUrl}/storage/v1/object/authenticated/${CONFIG_BUCKET}/${cleanPath}?t=${Date.now()}`;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+        },
+        cache: "no-store",
+        next: { revalidate: 0 },
+      } as RequestInit);
+
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.trim()) {
+          return JSON.parse(text) as T;
+        }
+      }
+    } catch {
+      // Fall through to SDK download
+    }
+  }
+
+  // 2. Fallback via Supabase SDK (createAdminClient now enforces cache: "no-store")
   try {
     const admin = createAdminClient();
     const { data, error } = await admin.storage.from(CONFIG_BUCKET).download(storagePath);

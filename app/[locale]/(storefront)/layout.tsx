@@ -13,6 +13,8 @@ import {
 import type { NavbarSearchProduct } from "@/components/storefront/navbar-search";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 interface StorefrontLayoutProps {
   children: React.ReactNode;

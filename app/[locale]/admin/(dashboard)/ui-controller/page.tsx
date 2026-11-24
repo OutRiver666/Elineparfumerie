@@ -10,6 +10,7 @@ import { AccessDenied } from "@/components/admin/access-denied";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 interface UiControllerPageProps {
   params: Promise<{ locale: string }>;
