@@ -8,6 +8,9 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getEffectiveAdminPermissions } from "@/lib/services/team.service";
 import { AccessDenied } from "@/components/admin/access-denied";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 interface UiControllerPageProps {
   params: Promise<{ locale: string }>;
 }

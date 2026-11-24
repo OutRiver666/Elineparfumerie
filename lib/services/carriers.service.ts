@@ -2,12 +2,17 @@ import fs from "fs";
 import path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  readJsonFromSupabaseStorage,
+  writeJsonToSupabaseStorage,
+} from "@/lib/supabase/storage-json";
+import {
   CarrierAccentColor,
   EcoTrackCarrierPublic,
   EcoTrackCarrierSecret,
 } from "@/lib/shipping/carriers-types";
 
 const LOCAL_CARRIERS_PATH = path.join(process.cwd(), "lib", "data", "ecotrack-carriers.json");
+const STORAGE_CARRIERS_PATH = "config/ecotrack-carriers.json";
 const BUILT_IN_IDS = new Set(["navex", "anderson"]);
 
 export function maskApiToken(token: string): string {
@@ -148,31 +153,36 @@ function readLocalCarriersFallback(): EcoTrackCarrierSecret[] {
 }
 
 async function writeLocalCarriersFallback(carriers: EcoTrackCarrierSecret[]): Promise<void> {
+  const serialized = carriers.map((c) => ({
+    id: c.id,
+    name: c.name,
+    short_name: c.shortName,
+    base_url: c.baseUrl,
+    api_token: c.apiToken,
+    accent_color: c.accentColor,
+    is_active: c.isActive,
+    sort_order: c.sortOrder,
+    created_at: c.createdAt || new Date().toISOString(),
+  }));
+
+  // 1. Persist to Supabase Storage (works on Vercel read-only filesystem)
+  await writeJsonToSupabaseStorage(STORAGE_CARRIERS_PATH, serialized);
+
+  // 2. Best-effort local JSON mirror in dev
   try {
     const dir = path.dirname(LOCAL_CARRIERS_PATH);
     if (!fs.existsSync(dir)) {
       await fs.promises.mkdir(dir, { recursive: true });
     }
-    const serialized = carriers.map((c) => ({
-      id: c.id,
-      name: c.name,
-      short_name: c.shortName,
-      base_url: c.baseUrl,
-      api_token: c.apiToken,
-      accent_color: c.accentColor,
-      is_active: c.isActive,
-      sort_order: c.sortOrder,
-      created_at: c.createdAt || new Date().toISOString(),
-    }));
     await fs.promises.writeFile(LOCAL_CARRIERS_PATH, JSON.stringify(serialized, null, 2), "utf-8");
-  } catch (err) {
-    console.warn("[carriers.service] Local JSON write skipped:", err);
+  } catch {
+    // Expected EROFS on Vercel serverless
   }
 }
 
 /**
  * Retrieves all EcoTrack carriers (including server-side API tokens).
- * Reads from Supabase `ecotrack_carriers`, falling back to local JSON + built-in defaults.
+ * Reads from Supabase `ecotrack_carriers`, falling back to Supabase Storage JSON, local JSON & defaults.
  */
 export async function getAllCarriersServer(): Promise<EcoTrackCarrierSecret[]> {
   try {
@@ -205,7 +215,12 @@ export async function getAllCarriersServer(): Promise<EcoTrackCarrierSecret[]> {
       return defaults;
     }
   } catch {
-    // Table not created yet — use local JSON fallback
+    // Table not created yet — use Supabase Storage / local JSON fallback
+  }
+
+  const cloudCarriers = await readJsonFromSupabaseStorage<any[]>(STORAGE_CARRIERS_PATH);
+  if (Array.isArray(cloudCarriers) && cloudCarriers.length > 0) {
+    return cloudCarriers.map(toSecretRecord).sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
   return readLocalCarriersFallback();

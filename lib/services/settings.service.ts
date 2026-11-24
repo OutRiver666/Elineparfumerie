@@ -1,6 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  readJsonFromSupabaseStorage,
+  writeJsonToSupabaseStorage,
+} from "@/lib/supabase/storage-json";
 import { ALGERIA_WILAYAS } from "@/lib/data/algeria-locations";
 import {
   DEFAULT_STORE_SETTINGS,
@@ -10,6 +14,7 @@ import {
 } from "@/types/settings";
 
 const LOCAL_SETTINGS_PATH = path.join(process.cwd(), "lib", "data", "store-settings.json");
+const STORAGE_SETTINGS_PATH = "config/store-settings.json";
 
 function readLocalSettingsFallback(): StoreSettings {
   try {
@@ -28,6 +33,10 @@ function readLocalSettingsFallback(): StoreSettings {
 }
 
 async function writeLocalSettingsFallback(settings: StoreSettings): Promise<void> {
+  // 1. Always mirror to Supabase Storage so Vercel serverless keeps optional fields (e.g. deliveryPricingMode)
+  await writeJsonToSupabaseStorage(STORAGE_SETTINGS_PATH, settings);
+
+  // 2. Best-effort local disk mirror (ignored on Vercel EROFS)
   try {
     const dir = path.dirname(LOCAL_SETTINGS_PATH);
     if (!fs.existsSync(dir)) {
@@ -38,15 +47,20 @@ async function writeLocalSettingsFallback(settings: StoreSettings): Promise<void
       JSON.stringify(settings, null, 2),
       "utf-8"
     );
-  } catch (err) {
-    console.warn("[saveStoreSettings] Local fallback write skipped:", err);
+  } catch {
+    // Expected EROFS on Vercel serverless
   }
 }
 
 /**
- * Retrieve global store settings from Supabase store_settings (with local JSON & defaults fallback).
+ * Retrieve global store settings from Supabase store_settings (with Supabase Storage & local fallback).
  */
 export async function getStoreSettings(): Promise<StoreSettings> {
+  const cloudFallback = await readJsonFromSupabaseStorage<Partial<StoreSettings>>(
+    STORAGE_SETTINGS_PATH
+  );
+  const local = { ...readLocalSettingsFallback(), ...(cloudFallback || {}) };
+
   try {
     const admin = createAdminClient();
     const { data, error } = await (admin.from("store_settings") as any)
@@ -55,7 +69,6 @@ export async function getStoreSettings(): Promise<StoreSettings> {
       .maybeSingle();
 
     if (!error && data) {
-      const local = readLocalSettingsFallback();
       return {
         brandName: data.brand_name || DEFAULT_STORE_SETTINGS.brandName,
         contactPhone: data.contact_phone || DEFAULT_STORE_SETTINGS.contactPhone,
@@ -81,7 +94,7 @@ export async function getStoreSettings(): Promise<StoreSettings> {
     console.warn("[getStoreSettings] Supabase fetch failed, using fallback:", err);
   }
 
-  return readLocalSettingsFallback();
+  return local;
 }
 
 /**

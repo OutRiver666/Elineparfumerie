@@ -47,15 +47,29 @@ export async function uploadStorefrontImageAction(
     const cleanExt = ["jpg", "jpeg", "png", "webp", "gif", "avif"].includes(ext) ? ext : "jpg";
     const filename = `storefront_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${cleanExt}`;
 
-    // 1. Upload to Supabase Storage "storefront" bucket
+    // 1. Upload to Supabase Storage "storefront" bucket (auto-create if missing)
     try {
       const admin = createAdminClient();
-      const { error: uploadError } = await admin.storage
+      let { error: uploadError } = await admin.storage
         .from("storefront")
         .upload(filename, buffer, {
           contentType: file.type,
           upsert: true,
         });
+
+      if (uploadError && /bucket|not found/i.test(uploadError.message || "")) {
+        await admin.storage.createBucket("storefront", {
+          public: true,
+          fileSizeLimit: 15 * 1024 * 1024,
+        });
+        const retry = await admin.storage
+          .from("storefront")
+          .upload(filename, buffer, {
+            contentType: file.type,
+            upsert: true,
+          });
+        uploadError = retry.error;
+      }
 
       if (!uploadError) {
         const { data: pubUrl } = admin.storage.from("storefront").getPublicUrl(filename);
